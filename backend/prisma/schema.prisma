@@ -1,0 +1,502 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User Management
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  password      String
+  firstName     String
+  lastName      String
+  role          UserRole  @default(LOCATION_MANAGER)
+  phone         String?
+  avatar        String?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  locationId    String?
+  location      Location? @relation(fields: [locationId], references: [id])
+
+  announcements     Announcement[]
+  messages          Message[]        @relation("SentMessages")
+  receivedMessages  Message[]        @relation("ReceivedMessages")
+  supportTickets    SupportTicket[]
+  auditLogs         AuditLog[]
+  issueReports      IssueReport[]
+  knowledgeArticles KnowledgeArticle[]
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  CORPORATE_ADMIN
+  REGIONAL_MANAGER
+  LOCATION_MANAGER
+  STAFF
+}
+
+// Location Management
+model Location {
+  id              String    @id @default(uuid())
+  name            String
+  code            String    @unique
+  address         String
+  city            String
+  state           String
+  zipCode         String
+  country         String    @default("USA")
+  phone           String
+  email           String
+  latitude        Float?
+  longitude       Float?
+  timezone        String    @default("America/New_York")
+  status          LocationStatus @default(ACTIVE)
+  openDate        DateTime?
+
+  // Territory
+  territoryId     String?
+  territory       Territory? @relation(fields: [territoryId], references: [id])
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  users           User[]
+  operatingHours  OperatingHours[]
+  localPricing    LocalPricing[]
+  performanceData PerformanceData[]
+  financialData   FinancialData[]
+  complianceAudits ComplianceAudit[]
+  issueReports    IssueReport[]
+  checklists      ChecklistCompletion[]
+  aiAnalyses      AIAnalysis[]
+}
+
+enum LocationStatus {
+  ACTIVE
+  INACTIVE
+  PENDING
+  SUSPENDED
+}
+
+model Territory {
+  id          String    @id @default(uuid())
+  name        String
+  region      String
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  locations   Location[]
+}
+
+model OperatingHours {
+  id          String    @id @default(uuid())
+  locationId  String
+  location    Location  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  dayOfWeek   Int       // 0 = Sunday, 6 = Saturday
+  openTime    String    // HH:MM format
+  closeTime   String    // HH:MM format
+  isClosed    Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([locationId, dayOfWeek])
+}
+
+model LocalPricing {
+  id          String    @id @default(uuid())
+  locationId  String
+  location    Location  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id])
+  price       Float
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([locationId, productId])
+}
+
+model Product {
+  id            String    @id @default(uuid())
+  name          String
+  sku           String    @unique
+  description   String?
+  basePrice     Float
+  category      String
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  localPricing  LocalPricing[]
+}
+
+// Brand Standards
+model BrandGuideline {
+  id          String    @id @default(uuid())
+  title       String
+  category    String
+  content     String    @db.Text
+  version     String
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model MarketingTemplate {
+  id          String    @id @default(uuid())
+  name        String
+  category    String
+  description String?
+  fileUrl     String
+  thumbnail   String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model ApprovedVendor {
+  id          String    @id @default(uuid())
+  name        String
+  category    String
+  contactName String?
+  contactEmail String?
+  contactPhone String?
+  website     String?
+  notes       String?   @db.Text
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model TrainingMaterial {
+  id          String    @id @default(uuid())
+  title       String
+  category    String
+  description String?
+  contentType String    // video, document, quiz
+  contentUrl  String
+  duration    Int?      // in minutes
+  isRequired  Boolean   @default(false)
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model ComplianceChecklist {
+  id          String    @id @default(uuid())
+  name        String
+  category    String
+  description String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  items       ComplianceChecklistItem[]
+  audits      ComplianceAudit[]
+}
+
+model ComplianceChecklistItem {
+  id            String    @id @default(uuid())
+  checklistId   String
+  checklist     ComplianceChecklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+  item          String
+  description   String?
+  order         Int
+  isCritical    Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+// Operations
+model SOP {
+  id          String    @id @default(uuid())
+  title       String
+  category    String
+  content     String    @db.Text
+  version     String
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model OperationalChecklist {
+  id          String    @id @default(uuid())
+  name        String
+  category    String
+  frequency   String    // daily, weekly, monthly
+  description String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  items       OperationalChecklistItem[]
+  completions ChecklistCompletion[]
+}
+
+model OperationalChecklistItem {
+  id            String    @id @default(uuid())
+  checklistId   String
+  checklist     OperationalChecklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+  item          String
+  description   String?
+  order         Int
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model ChecklistCompletion {
+  id            String    @id @default(uuid())
+  checklistId   String
+  checklist     OperationalChecklist @relation(fields: [checklistId], references: [id])
+  locationId    String
+  location      Location  @relation(fields: [locationId], references: [id])
+  completedAt   DateTime  @default(now())
+  completedBy   String
+  notes         String?
+  itemsCompleted Json     // Array of completed item IDs
+  createdAt     DateTime  @default(now())
+}
+
+model ComplianceAudit {
+  id            String    @id @default(uuid())
+  locationId    String
+  location      Location  @relation(fields: [locationId], references: [id])
+  checklistId   String
+  checklist     ComplianceChecklist @relation(fields: [checklistId], references: [id])
+  scheduledDate DateTime
+  completedDate DateTime?
+  auditor       String?
+  score         Float?
+  status        AuditStatus @default(SCHEDULED)
+  findings      String?   @db.Text
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+enum AuditStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model IssueReport {
+  id          String    @id @default(uuid())
+  locationId  String
+  location    Location  @relation(fields: [locationId], references: [id])
+  reportedBy  String
+  reporter    User      @relation(fields: [reportedBy], references: [id])
+  title       String
+  description String    @db.Text
+  category    String
+  priority    Priority  @default(MEDIUM)
+  status      IssueStatus @default(OPEN)
+  resolution  String?   @db.Text
+  resolvedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum IssueStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+model BestPractice {
+  id          String    @id @default(uuid())
+  title       String
+  category    String
+  description String    @db.Text
+  impact      String?
+  implementedBy String?
+  isApproved  Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// Financial
+model FinancialData {
+  id          String    @id @default(uuid())
+  locationId  String
+  location    Location  @relation(fields: [locationId], references: [id])
+  period      DateTime  // Monthly period
+  revenue     Float
+  cogs        Float     // Cost of goods sold
+  laborCost   Float
+  operatingExpenses Float
+  netProfit   Float
+  royaltyDue  Float
+  royaltyPaid Float     @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([locationId, period])
+}
+
+model RoyaltyPayment {
+  id          String    @id @default(uuid())
+  locationId  String
+  period      DateTime
+  amountDue   Float
+  amountPaid  Float
+  paidDate    DateTime?
+  status      PaymentStatus @default(PENDING)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  OVERDUE
+  PARTIAL
+}
+
+// Performance
+model PerformanceData {
+  id            String    @id @default(uuid())
+  locationId    String
+  location      Location  @relation(fields: [locationId], references: [id])
+  date          DateTime
+  salesAmount   Float
+  transactionCount Int
+  averageTicket Float
+  customerCount Int
+  laborHours    Float
+  customerSatisfaction Float?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([locationId, date])
+}
+
+// Communication
+model Announcement {
+  id          String    @id @default(uuid())
+  title       String
+  content     String    @db.Text
+  priority    Priority  @default(MEDIUM)
+  authorId    String
+  author      User      @relation(fields: [authorId], references: [id])
+  targetRoles UserRole[]
+  isPublished Boolean   @default(false)
+  publishedAt DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Message {
+  id          String    @id @default(uuid())
+  senderId    String
+  sender      User      @relation("SentMessages", fields: [senderId], references: [id])
+  receiverId  String
+  receiver    User      @relation("ReceivedMessages", fields: [receiverId], references: [id])
+  subject     String
+  content     String    @db.Text
+  isRead      Boolean   @default(false)
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+}
+
+model KnowledgeArticle {
+  id          String    @id @default(uuid())
+  title       String
+  category    String
+  content     String    @db.Text
+  tags        String[]
+  authorId    String
+  author      User      @relation(fields: [authorId], references: [id])
+  views       Int       @default(0)
+  isPublished Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model SupportTicket {
+  id          String    @id @default(uuid())
+  ticketNumber String   @unique
+  submitterId String
+  submitter   User      @relation(fields: [submitterId], references: [id])
+  subject     String
+  description String    @db.Text
+  category    String
+  priority    Priority  @default(MEDIUM)
+  status      TicketStatus @default(OPEN)
+  assignedTo  String?
+  resolution  String?   @db.Text
+  resolvedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_ON_CUSTOMER
+  RESOLVED
+  CLOSED
+}
+
+// AI Analysis
+model AIAnalysis {
+  id          String    @id @default(uuid())
+  locationId  String?
+  location    Location? @relation(fields: [locationId], references: [id])
+  type        AIAnalysisType
+  input       Json
+  output      Json
+  createdAt   DateTime  @default(now())
+}
+
+enum AIAnalysisType {
+  PERFORMANCE_ANALYSIS
+  BENCHMARKING
+  COMPLIANCE_CHECK
+  DEMAND_FORECAST
+  BEST_PRACTICE
+  ANOMALY_DETECTION
+  REPORT_GENERATION
+}
+
+// Audit Log
+model AuditLog {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  action      String
+  entity      String
+  entityId    String?
+  oldValue    Json?
+  newValue    Json?
+  ipAddress   String?
+  createdAt   DateTime  @default(now())
+}
+
+// System Settings
+model SystemSetting {
+  id          String    @id @default(uuid())
+  key         String    @unique
+  value       String
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
