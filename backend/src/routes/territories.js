@@ -1,13 +1,15 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { authenticateToken, isCorporate } = require('../middleware/auth');
+const { getPaginationParams, paginatedResponse } = require('../utils/pagination');
 
 const router = express.Router();
 
-// Get all territories
+// Get all territories (with pagination and sorting)
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const { region, search } = req.query;
+    const { page, limit, skip, sortBy, sortOrder } = getPaginationParams(req.query);
 
     const where = {};
     if (region) where.region = region;
@@ -18,15 +20,20 @@ router.get('/', authenticateToken, async (req, res) => {
       ];
     }
 
-    const territories = await req.prisma.territory.findMany({
-      where,
-      include: {
-        _count: { select: { locations: true } }
-      },
-      orderBy: { name: 'asc' }
-    });
+    const [territories, total] = await Promise.all([
+      req.prisma.territory.findMany({
+        where,
+        include: {
+          _count: { select: { locations: true } }
+        },
+        skip,
+        take: limit,
+        orderBy: { [sortBy]: sortOrder }
+      }),
+      req.prisma.territory.count({ where })
+    ]);
 
-    res.json(territories);
+    res.json(paginatedResponse(territories, total, page, limit));
   } catch (error) {
     console.error('Get territories error:', error);
     res.status(500).json({ error: 'Failed to get territories' });
@@ -77,6 +84,71 @@ router.post('/', authenticateToken, isCorporate, [
   } catch (error) {
     console.error('Create territory error:', error);
     res.status(500).json({ error: 'Failed to create territory' });
+  }
+});
+
+// Bulk delete territories (hard delete, only those without locations)
+router.post('/bulk-delete', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    // Check which territories have locations
+    const territoriesWithLocations = await req.prisma.territory.findMany({
+      where: { id: { in: ids } },
+      include: { _count: { select: { locations: true } } }
+    });
+
+    const cannotDelete = territoriesWithLocations
+      .filter(t => t._count.locations > 0)
+      .map(t => t.name);
+
+    if (cannotDelete.length > 0) {
+      return res.status(400).json({
+        error: `Cannot delete territories with assigned locations: ${cannotDelete.join(', ')}`
+      });
+    }
+
+    const result = await req.prisma.territory.deleteMany({
+      where: { id: { in: ids } }
+    });
+
+    res.json({ message: `${result.count} territories deleted`, count: result.count });
+  } catch (error) {
+    console.error('Bulk delete territories error:', error);
+    res.status(500).json({ error: 'Failed to bulk delete territories' });
+  }
+});
+
+// Bulk update territories
+router.post('/bulk-update', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids, data } = req.body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    if (!data || typeof data !== 'object') {
+      return res.status(400).json({ error: 'data object is required' });
+    }
+
+    const updates = ids.map(id =>
+      req.prisma.territory.update({
+        where: { id },
+        data
+      })
+    );
+
+    const results = await Promise.all(updates);
+
+    res.json({ message: `${results.length} territories updated`, count: results.length });
+  } catch (error) {
+    console.error('Bulk update territories error:', error);
+    res.status(500).json({ error: 'Failed to bulk update territories' });
   }
 });
 

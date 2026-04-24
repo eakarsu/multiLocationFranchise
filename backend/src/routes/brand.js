@@ -1,6 +1,7 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { authenticateToken, isCorporate } = require('../middleware/auth');
+const { getPaginationParams, paginatedResponse } = require('../utils/pagination');
 
 const router = express.Router();
 
@@ -12,17 +13,23 @@ const router = express.Router();
 router.get('/guidelines', authenticateToken, async (req, res) => {
   try {
     const { category, isActive } = req.query;
+    const { page, limit, skip, sortBy, sortOrder } = getPaginationParams(req.query);
 
     const where = {};
     if (category) where.category = category;
     if (isActive !== undefined) where.isActive = isActive === 'true';
 
-    const guidelines = await req.prisma.brandGuideline.findMany({
-      where,
-      orderBy: { title: 'asc' }
-    });
+    const [guidelines, total] = await Promise.all([
+      req.prisma.brandGuideline.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { [sortBy]: sortOrder }
+      }),
+      req.prisma.brandGuideline.count({ where })
+    ]);
 
-    res.json(guidelines);
+    res.json(paginatedResponse(guidelines, total, page, limit));
   } catch (error) {
     console.error('Get guidelines error:', error);
     res.status(500).json({ error: 'Failed to get guidelines' });
@@ -104,6 +111,52 @@ router.delete('/guidelines/:id', authenticateToken, isCorporate, async (req, res
   }
 });
 
+// Bulk delete guidelines
+router.post('/guidelines/bulk-delete', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    const result = await req.prisma.brandGuideline.updateMany({
+      where: { id: { in: ids } },
+      data: { isActive: false }
+    });
+
+    res.json({ message: 'Guidelines deleted successfully', count: result.count });
+  } catch (error) {
+    console.error('Bulk delete guidelines error:', error);
+    res.status(500).json({ error: 'Failed to bulk delete guidelines' });
+  }
+});
+
+// Bulk update guidelines
+router.post('/guidelines/bulk-update', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids, data } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    if (!data || typeof data !== 'object') {
+      return res.status(400).json({ error: 'data object is required' });
+    }
+
+    const result = await req.prisma.brandGuideline.updateMany({
+      where: { id: { in: ids } },
+      data
+    });
+
+    res.json({ message: 'Guidelines updated successfully', count: result.count });
+  } catch (error) {
+    console.error('Bulk update guidelines error:', error);
+    res.status(500).json({ error: 'Failed to bulk update guidelines' });
+  }
+});
+
 // =====================
 // Marketing Templates
 // =====================
@@ -112,17 +165,23 @@ router.delete('/guidelines/:id', authenticateToken, isCorporate, async (req, res
 router.get('/templates', authenticateToken, async (req, res) => {
   try {
     const { category, isActive } = req.query;
+    const { page, limit, skip, sortBy, sortOrder } = getPaginationParams(req.query);
 
     const where = {};
     if (category) where.category = category;
     if (isActive !== undefined) where.isActive = isActive === 'true';
 
-    const templates = await req.prisma.marketingTemplate.findMany({
-      where,
-      orderBy: { name: 'asc' }
-    });
+    const [templates, total] = await Promise.all([
+      req.prisma.marketingTemplate.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { [sortBy]: sortOrder }
+      }),
+      req.prisma.marketingTemplate.count({ where })
+    ]);
 
-    res.json(templates);
+    res.json(paginatedResponse(templates, total, page, limit));
   } catch (error) {
     console.error('Get templates error:', error);
     res.status(500).json({ error: 'Failed to get templates' });
@@ -203,6 +262,52 @@ router.delete('/templates/:id', authenticateToken, isCorporate, async (req, res)
   }
 });
 
+// Bulk delete templates
+router.post('/templates/bulk-delete', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    const result = await req.prisma.marketingTemplate.updateMany({
+      where: { id: { in: ids } },
+      data: { isActive: false }
+    });
+
+    res.json({ message: 'Templates deleted successfully', count: result.count });
+  } catch (error) {
+    console.error('Bulk delete templates error:', error);
+    res.status(500).json({ error: 'Failed to bulk delete templates' });
+  }
+});
+
+// Bulk update templates
+router.post('/templates/bulk-update', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids, data } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    if (!data || typeof data !== 'object') {
+      return res.status(400).json({ error: 'data object is required' });
+    }
+
+    const result = await req.prisma.marketingTemplate.updateMany({
+      where: { id: { in: ids } },
+      data
+    });
+
+    res.json({ message: 'Templates updated successfully', count: result.count });
+  } catch (error) {
+    console.error('Bulk update templates error:', error);
+    res.status(500).json({ error: 'Failed to bulk update templates' });
+  }
+});
+
 // =====================
 // Approved Vendors
 // =====================
@@ -211,17 +316,23 @@ router.delete('/templates/:id', authenticateToken, isCorporate, async (req, res)
 router.get('/vendors', authenticateToken, async (req, res) => {
   try {
     const { category, isActive } = req.query;
+    const { page, limit, skip, sortBy, sortOrder } = getPaginationParams(req.query);
 
     const where = {};
     if (category) where.category = category;
     if (isActive !== undefined) where.isActive = isActive === 'true';
 
-    const vendors = await req.prisma.approvedVendor.findMany({
-      where,
-      orderBy: { name: 'asc' }
-    });
+    const [vendors, total] = await Promise.all([
+      req.prisma.approvedVendor.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { [sortBy]: sortOrder }
+      }),
+      req.prisma.approvedVendor.count({ where })
+    ]);
 
-    res.json(vendors);
+    res.json(paginatedResponse(vendors, total, page, limit));
   } catch (error) {
     console.error('Get vendors error:', error);
     res.status(500).json({ error: 'Failed to get vendors' });
@@ -301,6 +412,52 @@ router.delete('/vendors/:id', authenticateToken, isCorporate, async (req, res) =
   }
 });
 
+// Bulk delete vendors
+router.post('/vendors/bulk-delete', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    const result = await req.prisma.approvedVendor.updateMany({
+      where: { id: { in: ids } },
+      data: { isActive: false }
+    });
+
+    res.json({ message: 'Vendors deleted successfully', count: result.count });
+  } catch (error) {
+    console.error('Bulk delete vendors error:', error);
+    res.status(500).json({ error: 'Failed to bulk delete vendors' });
+  }
+});
+
+// Bulk update vendors
+router.post('/vendors/bulk-update', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids, data } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    if (!data || typeof data !== 'object') {
+      return res.status(400).json({ error: 'data object is required' });
+    }
+
+    const result = await req.prisma.approvedVendor.updateMany({
+      where: { id: { in: ids } },
+      data
+    });
+
+    res.json({ message: 'Vendors updated successfully', count: result.count });
+  } catch (error) {
+    console.error('Bulk update vendors error:', error);
+    res.status(500).json({ error: 'Failed to bulk update vendors' });
+  }
+});
+
 // =====================
 // Training Materials
 // =====================
@@ -309,6 +466,7 @@ router.delete('/vendors/:id', authenticateToken, isCorporate, async (req, res) =
 router.get('/training', authenticateToken, async (req, res) => {
   try {
     const { category, contentType, isRequired, isActive } = req.query;
+    const { page, limit, skip, sortBy, sortOrder } = getPaginationParams(req.query);
 
     const where = {};
     if (category) where.category = category;
@@ -316,12 +474,17 @@ router.get('/training', authenticateToken, async (req, res) => {
     if (isRequired !== undefined) where.isRequired = isRequired === 'true';
     if (isActive !== undefined) where.isActive = isActive === 'true';
 
-    const materials = await req.prisma.trainingMaterial.findMany({
-      where,
-      orderBy: { title: 'asc' }
-    });
+    const [materials, total] = await Promise.all([
+      req.prisma.trainingMaterial.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { [sortBy]: sortOrder }
+      }),
+      req.prisma.trainingMaterial.count({ where })
+    ]);
 
-    res.json(materials);
+    res.json(paginatedResponse(materials, total, page, limit));
   } catch (error) {
     console.error('Get training materials error:', error);
     res.status(500).json({ error: 'Failed to get training materials' });
@@ -403,6 +566,52 @@ router.delete('/training/:id', authenticateToken, isCorporate, async (req, res) 
   }
 });
 
+// Bulk delete training materials
+router.post('/training/bulk-delete', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    const result = await req.prisma.trainingMaterial.updateMany({
+      where: { id: { in: ids } },
+      data: { isActive: false }
+    });
+
+    res.json({ message: 'Training materials deleted successfully', count: result.count });
+  } catch (error) {
+    console.error('Bulk delete training materials error:', error);
+    res.status(500).json({ error: 'Failed to bulk delete training materials' });
+  }
+});
+
+// Bulk update training materials
+router.post('/training/bulk-update', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids, data } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    if (!data || typeof data !== 'object') {
+      return res.status(400).json({ error: 'data object is required' });
+    }
+
+    const result = await req.prisma.trainingMaterial.updateMany({
+      where: { id: { in: ids } },
+      data
+    });
+
+    res.json({ message: 'Training materials updated successfully', count: result.count });
+  } catch (error) {
+    console.error('Bulk update training materials error:', error);
+    res.status(500).json({ error: 'Failed to bulk update training materials' });
+  }
+});
+
 // =====================
 // Compliance Checklists
 // =====================
@@ -411,21 +620,27 @@ router.delete('/training/:id', authenticateToken, isCorporate, async (req, res) 
 router.get('/compliance-checklists', authenticateToken, async (req, res) => {
   try {
     const { category, isActive } = req.query;
+    const { page, limit, skip, sortBy, sortOrder } = getPaginationParams(req.query);
 
     const where = {};
     if (category) where.category = category;
     if (isActive !== undefined) where.isActive = isActive === 'true';
 
-    const checklists = await req.prisma.complianceChecklist.findMany({
-      where,
-      include: {
-        items: { orderBy: { order: 'asc' } },
-        _count: { select: { audits: true } }
-      },
-      orderBy: { name: 'asc' }
-    });
+    const [checklists, total] = await Promise.all([
+      req.prisma.complianceChecklist.findMany({
+        where,
+        include: {
+          items: { orderBy: { order: 'asc' } },
+          _count: { select: { audits: true } }
+        },
+        skip,
+        take: limit,
+        orderBy: { [sortBy]: sortOrder }
+      }),
+      req.prisma.complianceChecklist.count({ where })
+    ]);
 
-    res.json(checklists);
+    res.json(paginatedResponse(checklists, total, page, limit));
   } catch (error) {
     console.error('Get compliance checklists error:', error);
     res.status(500).json({ error: 'Failed to get compliance checklists' });

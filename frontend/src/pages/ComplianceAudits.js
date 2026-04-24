@@ -3,6 +3,11 @@ import { operationsAPI, locationsAPI, brandAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { FiPlus, FiEdit2, FiTrash2, FiClipboard, FiCalendar, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 import toast from 'react-hot-toast';
+import Pagination from '../components/Pagination';
+import SortableHeader from '../components/SortableHeader';
+import ExportButtons from '../components/ExportButtons';
+import ConfirmDialog from '../components/ConfirmDialog';
+import { PageSkeleton } from '../components/LoadingSkeleton';
 
 // Modern Date Picker Component
 const DatePicker = ({ value, onChange, required }) => {
@@ -277,21 +282,43 @@ const ComplianceAudits = () => {
   const [editing, setEditing] = useState(null);
   const [formData, setFormData] = useState({ locationId: '', checklistId: '', scheduledDate: '', auditor: '', status: 'SCHEDULED', score: '', findings: '' });
 
-  useEffect(() => { loadData(); }, [statusFilter]);
+  // Pagination, sort, bulk ops, confirm, detail state
+  const [pagination, setPagination] = useState(null);
+  const [page, setPage] = useState(1);
+  const [sortBy, setSortBy] = useState('createdAt');
+  const [sortOrder, setSortOrder] = useState('desc');
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [confirmDialog, setConfirmDialog] = useState({ isOpen: false });
+  const [detailItem, setDetailItem] = useState(null);
+  const [showBulkUpdateModal, setShowBulkUpdateModal] = useState(false);
+  const [bulkUpdateData, setBulkUpdateData] = useState({});
+
+  useEffect(() => { loadData(); }, [page, sortBy, sortOrder, statusFilter]);
 
   const loadData = async () => {
     try {
+      setLoading(true);
       const [auditRes, locRes, checkRes] = await Promise.all([
-        operationsAPI.getAudits({ status: statusFilter }),
+        operationsAPI.getAudits({ page, limit: 15, sortBy, sortOrder, status: statusFilter }),
         locationsAPI.getAll(),
         brandAPI.getComplianceChecklists()
       ]);
-      setItems(auditRes.data);
+      setItems(auditRes.data.data);
+      setPagination(auditRes.data.pagination);
       setLocations(locRes.data);
       setChecklists(checkRes.data);
     } catch (error) { toast.error('Failed to load audits'); }
     finally { setLoading(false); }
   };
+
+  const handleSort = (field) => {
+    if (sortBy === field) setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+    else { setSortBy(field); setSortOrder('asc'); }
+    setPage(1);
+  };
+
+  const toggleSelect = (id) => setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const toggleSelectAll = () => setSelectedIds(prev => prev.length === items.length ? [] : items.map(i => i.id));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -307,10 +334,39 @@ const ComplianceAudits = () => {
     } catch (error) { toast.error('Failed'); }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('Delete this audit?')) return;
-    try { await operationsAPI.deleteAudit(id); toast.success('Deleted'); loadData(); }
-    catch (error) { toast.error('Failed'); }
+  const handleDelete = (id) => setConfirmDialog({
+    isOpen: true,
+    title: 'Delete Audit',
+    message: 'Are you sure you want to delete this audit?',
+    variant: 'danger',
+    onConfirm: async () => {
+      try { await operationsAPI.deleteAudit(id); toast.success('Deleted'); loadData(); }
+      catch { toast.error('Failed'); }
+      setConfirmDialog({ isOpen: false });
+    }
+  });
+
+  const handleBulkDelete = () => setConfirmDialog({
+    isOpen: true,
+    title: 'Delete Selected',
+    message: `Delete ${selectedIds.length} audits?`,
+    variant: 'danger',
+    onConfirm: async () => {
+      try { await operationsAPI.bulkDeleteAudits(selectedIds); toast.success('Deleted'); setSelectedIds([]); loadData(); }
+      catch { toast.error('Failed'); }
+      setConfirmDialog({ isOpen: false });
+    }
+  });
+
+  const handleBulkUpdate = async () => {
+    try {
+      await operationsAPI.bulkUpdateAudits(selectedIds, bulkUpdateData);
+      toast.success('Updated');
+      setSelectedIds([]);
+      setShowBulkUpdateModal(false);
+      setBulkUpdateData({});
+      loadData();
+    } catch { toast.error('Failed'); }
   };
 
   const statusBadge = (status) => {
@@ -320,17 +376,29 @@ const ComplianceAudits = () => {
 
   const formatDate = (date) => new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
-  if (loading) return <div className="loading"><div className="spinner"></div></div>;
+  const exportColumns = [
+    { key: 'location.name', label: 'Location' },
+    { key: 'checklist.name', label: 'Checklist' },
+    { key: 'scheduledDate', label: 'Scheduled Date' },
+    { key: 'status', label: 'Status' },
+    { key: 'score', label: 'Score' },
+    { key: 'auditor', label: 'Auditor' }
+  ];
+
+  if (loading && items.length === 0) return <PageSkeleton />;
 
   return (
     <div>
       <div className="page-header">
-        <div><h1 className="page-title">Compliance Audits</h1><p className="page-subtitle">{items.length} audits</p></div>
-        {isCorporate() && <button className="btn btn-primary" onClick={() => { setEditing(null); setFormData({ locationId: '', checklistId: '', scheduledDate: '', auditor: '', status: 'SCHEDULED', score: '', findings: '' }); setShowModal(true); }}><FiPlus /> Schedule Audit</button>}
+        <div><h1 className="page-title">Compliance Audits</h1><p className="page-subtitle">{pagination?.total || items.length} audits</p></div>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <ExportButtons data={items} columns={exportColumns} filename="compliance-audits" />
+          {isCorporate() && <button className="btn btn-primary" onClick={() => { setEditing(null); setFormData({ locationId: '', checklistId: '', scheduledDate: '', auditor: '', status: 'SCHEDULED', score: '', findings: '' }); setShowModal(true); }}><FiPlus /> Schedule Audit</button>}
+        </div>
       </div>
 
       <div className="filter-bar">
-        <select className="form-select" style={{ width: '180px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <select className="form-select" style={{ width: '180px' }} value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}>
           <option value="">All Statuses</option>
           <option value="SCHEDULED">Scheduled</option>
           <option value="IN_PROGRESS">In Progress</option>
@@ -339,19 +407,42 @@ const ComplianceAudits = () => {
         </select>
       </div>
 
+      {selectedIds.length > 0 && (
+        <div className="card" style={{ marginBottom: '16px', padding: '12px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--primary-light, #eef2ff)' }}>
+          <span style={{ fontWeight: 500 }}>{selectedIds.length} item(s) selected</span>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button className="btn btn-sm btn-secondary" onClick={() => setShowBulkUpdateModal(true)}>Bulk Update</button>
+            <button className="btn btn-sm btn-danger" onClick={handleBulkDelete}>Delete Selected</button>
+            <button className="btn btn-sm btn-secondary" onClick={() => setSelectedIds([])}>Clear</button>
+          </div>
+        </div>
+      )}
+
       <div className="card">
         <table className="table">
-          <thead><tr><th>Location</th><th>Checklist</th><th>Scheduled</th><th>Auditor</th><th>Status</th><th>Score</th><th>Actions</th></tr></thead>
+          <thead>
+            <tr>
+              <th style={{ width: '40px' }}><input type="checkbox" checked={items.length > 0 && selectedIds.length === items.length} onChange={toggleSelectAll} /></th>
+              <SortableHeader label="Location" field="locationId" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
+              <SortableHeader label="Checklist" field="checklistId" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
+              <SortableHeader label="Scheduled" field="scheduledDate" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
+              <SortableHeader label="Auditor" field="auditor" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
+              <SortableHeader label="Status" field="status" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
+              <SortableHeader label="Score" field="score" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
+              <th>Actions</th>
+            </tr>
+          </thead>
           <tbody>
             {items.map(item => (
-              <tr key={item.id}>
+              <tr key={item.id} onClick={() => setDetailItem(item)} style={{ cursor: 'pointer' }}>
+                <td onClick={e => e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(item.id)} onChange={() => toggleSelect(item.id)} /></td>
                 <td><div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><FiClipboard style={{ color: 'var(--primary)' }} />{item.location?.name || 'Unknown'}</div></td>
                 <td>{item.checklist?.name || 'Unknown'}</td>
                 <td><FiCalendar size={14} /> {formatDate(item.scheduledDate)}</td>
                 <td>{item.auditor || '-'}</td>
                 <td>{statusBadge(item.status)}</td>
                 <td>{item.score ? `${item.score.toFixed(1)}%` : '-'}</td>
-                <td>
+                <td onClick={e => e.stopPropagation()}>
                   <div className="action-buttons">
                     <button className="btn btn-sm btn-secondary" onClick={() => { setEditing(item); setFormData({ locationId: item.locationId, checklistId: item.checklistId, scheduledDate: item.scheduledDate.split('T')[0], auditor: item.auditor || '', status: item.status, score: item.score?.toString() || '', findings: item.findings || '' }); setShowModal(true); }}><FiEdit2 /></button>
                     {isCorporate() && <button className="btn btn-sm btn-danger" onClick={() => handleDelete(item.id)}><FiTrash2 /></button>}
@@ -363,6 +454,40 @@ const ComplianceAudits = () => {
         </table>
       </div>
 
+      {pagination && <Pagination pagination={pagination} onPageChange={setPage} />}
+
+      {/* Detail Modal */}
+      {detailItem && (
+        <div className="modal-overlay" onClick={() => setDetailItem(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header"><h3 className="modal-title">Audit Details</h3><button className="modal-close" onClick={() => setDetailItem(null)}>&times;</button></div>
+            <div className="modal-body">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+                <div><strong>Location:</strong> {detailItem.location?.name || 'Unknown'}</div>
+                <div><strong>Checklist:</strong> {detailItem.checklist?.name || 'Unknown'}</div>
+                <div><strong>Scheduled Date:</strong> {formatDate(detailItem.scheduledDate)}</div>
+                <div><strong>Auditor:</strong> {detailItem.auditor || '-'}</div>
+                <div><strong>Status:</strong> {statusBadge(detailItem.status)}</div>
+                <div><strong>Score:</strong> {detailItem.score ? `${detailItem.score.toFixed(1)}%` : '-'}</div>
+                <div><strong>Created:</strong> {new Date(detailItem.createdAt).toLocaleDateString()}</div>
+              </div>
+              {detailItem.findings && (
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
+                  <strong>Findings:</strong>
+                  <p style={{ marginTop: '8px', whiteSpace: 'pre-wrap' }}>{detailItem.findings}</p>
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => { setDetailItem(null); setEditing(detailItem); setFormData({ locationId: detailItem.locationId, checklistId: detailItem.checklistId, scheduledDate: detailItem.scheduledDate.split('T')[0], auditor: detailItem.auditor || '', status: detailItem.status, score: detailItem.score?.toString() || '', findings: detailItem.findings || '' }); setShowModal(true); }}><FiEdit2 /> Edit</button>
+              {isCorporate() && <button className="btn btn-danger" onClick={() => { setDetailItem(null); handleDelete(detailItem.id); }}><FiTrash2 /> Delete</button>}
+              <button className="btn btn-secondary" onClick={() => setDetailItem(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create/Edit Modal */}
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
@@ -397,6 +522,44 @@ const ComplianceAudits = () => {
           </div>
         </div>
       )}
+
+      {/* Bulk Update Modal */}
+      {showBulkUpdateModal && (
+        <div className="modal-overlay" onClick={() => setShowBulkUpdateModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header"><h3 className="modal-title">Bulk Update {selectedIds.length} Audits</h3><button className="modal-close" onClick={() => setShowBulkUpdateModal(false)}>&times;</button></div>
+            <div className="modal-body">
+              <div className="form-group">
+                <label className="form-label">Status</label>
+                <select className="form-select" value={bulkUpdateData.status || ''} onChange={(e) => setBulkUpdateData({...bulkUpdateData, status: e.target.value || undefined})}>
+                  <option value="">No change</option>
+                  <option value="SCHEDULED">Scheduled</option>
+                  <option value="IN_PROGRESS">In Progress</option>
+                  <option value="COMPLETED">Completed</option>
+                  <option value="CANCELLED">Cancelled</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Auditor</label>
+                <input type="text" className="form-input" value={bulkUpdateData.auditor || ''} onChange={(e) => setBulkUpdateData({...bulkUpdateData, auditor: e.target.value})} placeholder="Leave blank to skip" />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setShowBulkUpdateModal(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleBulkUpdate}>Update All</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        variant={confirmDialog.variant}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={() => setConfirmDialog({ isOpen: false })}
+      />
     </div>
   );
 };

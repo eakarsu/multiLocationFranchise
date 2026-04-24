@@ -1,6 +1,7 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { authenticateToken, isCorporate, isManager } = require('../middleware/auth');
+const { getPaginationParams, paginatedResponse } = require('../utils/pagination');
 
 const router = express.Router();
 
@@ -12,6 +13,7 @@ const router = express.Router();
 router.get('/data', authenticateToken, async (req, res) => {
   try {
     const { locationId, startDate, endDate, year, month } = req.query;
+    const { page, limit, skip, sortBy, sortOrder } = getPaginationParams(req.query);
 
     const where = {};
     if (locationId) where.locationId = locationId;
@@ -34,15 +36,20 @@ router.get('/data', authenticateToken, async (req, res) => {
       };
     }
 
-    const financialData = await req.prisma.financialData.findMany({
-      where,
-      include: {
-        location: { select: { id: true, name: true, code: true } }
-      },
-      orderBy: [{ period: 'desc' }, { locationId: 'asc' }]
-    });
+    const [financialData, total] = await Promise.all([
+      req.prisma.financialData.findMany({
+        where,
+        include: {
+          location: { select: { id: true, name: true, code: true } }
+        },
+        skip,
+        take: limit,
+        orderBy: { [sortBy]: sortOrder }
+      }),
+      req.prisma.financialData.count({ where })
+    ]);
 
-    res.json(financialData);
+    res.json(paginatedResponse(financialData, total, page, limit));
   } catch (error) {
     console.error('Get financial data error:', error);
     res.status(500).json({ error: 'Failed to get financial data' });
@@ -142,6 +149,51 @@ router.delete('/data/:id', authenticateToken, isCorporate, async (req, res) => {
   }
 });
 
+// Bulk delete financial data
+router.post('/data/bulk-delete', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    const result = await req.prisma.financialData.deleteMany({
+      where: { id: { in: ids } }
+    });
+
+    res.json({ message: 'Financial data deleted successfully', count: result.count });
+  } catch (error) {
+    console.error('Bulk delete financial data error:', error);
+    res.status(500).json({ error: 'Failed to bulk delete financial data' });
+  }
+});
+
+// Bulk update financial data
+router.post('/data/bulk-update', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids, data } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    if (!data || typeof data !== 'object') {
+      return res.status(400).json({ error: 'data object is required' });
+    }
+
+    const result = await req.prisma.financialData.updateMany({
+      where: { id: { in: ids } },
+      data
+    });
+
+    res.json({ message: 'Financial data updated successfully', count: result.count });
+  } catch (error) {
+    console.error('Bulk update financial data error:', error);
+    res.status(500).json({ error: 'Failed to bulk update financial data' });
+  }
+});
+
 // =====================
 // Royalty Payments
 // =====================
@@ -150,6 +202,7 @@ router.delete('/data/:id', authenticateToken, isCorporate, async (req, res) => {
 router.get('/royalties', authenticateToken, async (req, res) => {
   try {
     const { locationId, status, startDate, endDate } = req.query;
+    const { page, limit, skip, sortBy, sortOrder } = getPaginationParams(req.query);
 
     const where = {};
     if (locationId) where.locationId = locationId;
@@ -165,10 +218,15 @@ router.get('/royalties', authenticateToken, async (req, res) => {
       where.locationId = req.user.locationId;
     }
 
-    const payments = await req.prisma.royaltyPayment.findMany({
-      where,
-      orderBy: [{ period: 'desc' }, { locationId: 'asc' }]
-    });
+    const [payments, total] = await Promise.all([
+      req.prisma.royaltyPayment.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { [sortBy]: sortOrder }
+      }),
+      req.prisma.royaltyPayment.count({ where })
+    ]);
 
     // Get location info
     const locationIds = [...new Set(payments.map(p => p.locationId))];
@@ -183,7 +241,7 @@ router.get('/royalties', authenticateToken, async (req, res) => {
       location: locationMap[p.locationId]
     }));
 
-    res.json(paymentsWithLocation);
+    res.json(paginatedResponse(paymentsWithLocation, total, page, limit));
   } catch (error) {
     console.error('Get royalties error:', error);
     res.status(500).json({ error: 'Failed to get royalties' });
@@ -240,6 +298,51 @@ router.put('/royalties/:id', authenticateToken, isCorporate, async (req, res) =>
   } catch (error) {
     console.error('Update royalty payment error:', error);
     res.status(500).json({ error: 'Failed to update royalty payment' });
+  }
+});
+
+// Bulk delete royalty payments
+router.post('/royalties/bulk-delete', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    const result = await req.prisma.royaltyPayment.deleteMany({
+      where: { id: { in: ids } }
+    });
+
+    res.json({ message: 'Royalty payments deleted successfully', count: result.count });
+  } catch (error) {
+    console.error('Bulk delete royalties error:', error);
+    res.status(500).json({ error: 'Failed to bulk delete royalty payments' });
+  }
+});
+
+// Bulk update royalty payments
+router.post('/royalties/bulk-update', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids, data } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    if (!data || typeof data !== 'object') {
+      return res.status(400).json({ error: 'data object is required' });
+    }
+
+    const result = await req.prisma.royaltyPayment.updateMany({
+      where: { id: { in: ids } },
+      data
+    });
+
+    res.json({ message: 'Royalty payments updated successfully', count: result.count });
+  } catch (error) {
+    console.error('Bulk update royalties error:', error);
+    res.status(500).json({ error: 'Failed to bulk update royalty payments' });
   }
 });
 

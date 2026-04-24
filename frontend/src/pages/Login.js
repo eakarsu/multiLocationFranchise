@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { FiGrid, FiMail, FiLock } from 'react-icons/fi';
 import toast from 'react-hot-toast';
@@ -90,6 +90,12 @@ const Login = () => {
           >
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
+
+          <div style={{ textAlign: 'center', marginTop: '12px' }}>
+            <Link to="/forgot-password" style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+              Forgot your password?
+            </Link>
+          </div>
         </form>
 
         <div style={{ marginTop: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>

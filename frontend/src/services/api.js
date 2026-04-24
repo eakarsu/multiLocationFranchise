@@ -37,7 +37,9 @@ export const authAPI = {
   register: (data) => api.post('/auth/register', data),
   getMe: () => api.get('/auth/me'),
   updateProfile: (data) => api.put('/auth/profile', data),
-  changePassword: (data) => api.put('/auth/change-password', data)
+  changePassword: (data) => api.put('/auth/change-password', data),
+  forgotPassword: (data) => api.post('/auth/forgot-password', data),
+  resetPassword: (data) => api.post('/auth/reset-password', data)
 };
 
 // Users
@@ -48,6 +50,8 @@ export const usersAPI = {
   update: (id, data) => api.put(`/users/${id}`, data),
   delete: (id) => api.delete(`/users/${id}`),
   resetPassword: (id, data) => api.post(`/users/${id}/reset-password`, data),
+  bulkDelete: (ids) => api.post('/users/bulk-delete', { ids }),
+  bulkUpdate: (ids, data) => api.post('/users/bulk-update', { ids, data }),
   getRoles: () => api.get('/users/meta/roles'),
   getProfile: () => api.get('/users/profile/me'),
   updateProfile: (data) => api.put('/users/profile/me', data),
@@ -61,6 +65,8 @@ export const locationsAPI = {
   create: (data) => api.post('/locations', data),
   update: (id, data) => api.put(`/locations/${id}`, data),
   delete: (id) => api.delete(`/locations/${id}`),
+  bulkDelete: (ids) => api.post('/locations/bulk-delete', { ids }),
+  bulkUpdate: (ids, data) => api.post('/locations/bulk-update', { ids, data }),
   getHours: (id) => api.get(`/locations/${id}/hours`),
   updateHours: (id, data) => api.put(`/locations/${id}/hours`, data),
   getPricing: (id) => api.get(`/locations/${id}/pricing`),
@@ -76,6 +82,8 @@ export const territoriesAPI = {
   create: (data) => api.post('/territories', data),
   update: (id, data) => api.put(`/territories/${id}`, data),
   delete: (id) => api.delete(`/territories/${id}`),
+  bulkDelete: (ids) => api.post('/territories/bulk-delete', { ids }),
+  bulkUpdate: (ids, data) => api.post('/territories/bulk-update', { ids, data }),
   getRegions: () => api.get('/territories/meta/regions')
 };
 
@@ -86,6 +94,8 @@ export const productsAPI = {
   create: (data) => api.post('/products', data),
   update: (id, data) => api.put(`/products/${id}`, data),
   delete: (id) => api.delete(`/products/${id}`),
+  bulkDelete: (ids) => api.post('/products/bulk-delete', { ids }),
+  bulkUpdate: (ids, data) => api.post('/products/bulk-update', { ids, data }),
   getCategories: () => api.get('/products/meta/categories')
 };
 
@@ -97,6 +107,8 @@ export const brandAPI = {
   createGuideline: (data) => api.post('/brand/guidelines', data),
   updateGuideline: (id, data) => api.put(`/brand/guidelines/${id}`, data),
   deleteGuideline: (id) => api.delete(`/brand/guidelines/${id}`),
+  bulkDeleteGuidelines: (ids) => api.post('/brand/guidelines/bulk-delete', { ids }),
+  bulkUpdateGuidelines: (ids, data) => api.post('/brand/guidelines/bulk-update', { ids, data }),
 
   // Templates
   getTemplates: (params) => api.get('/brand/templates', { params }),
@@ -104,6 +116,8 @@ export const brandAPI = {
   createTemplate: (data) => api.post('/brand/templates', data),
   updateTemplate: (id, data) => api.put(`/brand/templates/${id}`, data),
   deleteTemplate: (id) => api.delete(`/brand/templates/${id}`),
+  bulkDeleteTemplates: (ids) => api.post('/brand/templates/bulk-delete', { ids }),
+  bulkUpdateTemplates: (ids, data) => api.post('/brand/templates/bulk-update', { ids, data }),
 
   // Vendors
   getVendors: (params) => api.get('/brand/vendors', { params }),
@@ -111,6 +125,8 @@ export const brandAPI = {
   createVendor: (data) => api.post('/brand/vendors', data),
   updateVendor: (id, data) => api.put(`/brand/vendors/${id}`, data),
   deleteVendor: (id) => api.delete(`/brand/vendors/${id}`),
+  bulkDeleteVendors: (ids) => api.post('/brand/vendors/bulk-delete', { ids }),
+  bulkUpdateVendors: (ids, data) => api.post('/brand/vendors/bulk-update', { ids, data }),
 
   // Training
   getTraining: (params) => api.get('/brand/training', { params }),
@@ -118,6 +134,8 @@ export const brandAPI = {
   createTraining: (data) => api.post('/brand/training', data),
   updateTraining: (id, data) => api.put(`/brand/training/${id}`, data),
   deleteTraining: (id) => api.delete(`/brand/training/${id}`),
+  bulkDeleteTraining: (ids) => api.post('/brand/training/bulk-delete', { ids }),
+  bulkUpdateTraining: (ids, data) => api.post('/brand/training/bulk-update', { ids, data }),
 
   // Compliance Checklists
   getComplianceChecklists: (params) => api.get('/brand/compliance-checklists', { params }),
@@ -137,6 +155,8 @@ export const operationsAPI = {
   createSOP: (data) => api.post('/operations/sops', data),
   updateSOP: (id, data) => api.put(`/operations/sops/${id}`, data),
   deleteSOP: (id) => api.delete(`/operations/sops/${id}`),
+  bulkDeleteSOPs: (ids) => api.post('/operations/sops/bulk-delete', { ids }),
+  bulkUpdateSOPs: (ids, data) => api.post('/operations/sops/bulk-update', { ids, data }),
 
   // Checklists
   getChecklists: (params) => api.get('/operations/checklists', { params }),
@@ -153,6 +173,8 @@ export const operationsAPI = {
   createAudit: (data) => api.post('/operations/audits', data),
   updateAudit: (id, data) => api.put(`/operations/audits/${id}`, data),
   deleteAudit: (id) => api.delete(`/operations/audits/${id}`),
+  bulkDeleteAudits: (ids) => api.post('/operations/audits/bulk-delete', { ids }),
+  bulkUpdateAudits: (ids, data) => api.post('/operations/audits/bulk-update', { ids, data }),
 
   // Issues
   getIssues: (params) => api.get('/operations/issues', { params }),
@@ -160,6 +182,8 @@ export const operationsAPI = {
   createIssue: (data) => api.post('/operations/issues', data),
   updateIssue: (id, data) => api.put(`/operations/issues/${id}`, data),
   deleteIssue: (id) => api.delete(`/operations/issues/${id}`),
+  bulkDeleteIssues: (ids) => api.post('/operations/issues/bulk-delete', { ids }),
+  bulkUpdateIssues: (ids, data) => api.post('/operations/issues/bulk-update', { ids, data }),
 
   // Best Practices
   getBestPractices: (params) => api.get('/operations/best-practices', { params }),
@@ -167,6 +191,8 @@ export const operationsAPI = {
   createBestPractice: (data) => api.post('/operations/best-practices', data),
   updateBestPractice: (id, data) => api.put(`/operations/best-practices/${id}`, data),
   deleteBestPractice: (id) => api.delete(`/operations/best-practices/${id}`),
+  bulkDeleteBestPractices: (ids) => api.post('/operations/best-practices/bulk-delete', { ids }),
+  bulkUpdateBestPractices: (ids, data) => api.post('/operations/best-practices/bulk-update', { ids, data }),
 
   getCategories: () => api.get('/operations/meta/categories')
 };
@@ -176,10 +202,13 @@ export const financialAPI = {
   getData: (params) => api.get('/financial/data', { params }),
   createData: (data) => api.post('/financial/data', data),
   deleteData: (id) => api.delete(`/financial/data/${id}`),
+  bulkDeleteData: (ids) => api.post('/financial/data/bulk-delete', { ids }),
 
   getRoyalties: (params) => api.get('/financial/royalties', { params }),
   createRoyalty: (data) => api.post('/financial/royalties', data),
   updateRoyalty: (id, data) => api.put(`/financial/royalties/${id}`, data),
+  bulkDeleteRoyalties: (ids) => api.post('/financial/royalties/bulk-delete', { ids }),
+  bulkUpdateRoyalties: (ids, data) => api.post('/financial/royalties/bulk-update', { ids, data }),
 
   getPnlSummary: (params) => api.get('/financial/pnl/summary', { params }),
   getBenchmarks: (params) => api.get('/financial/benchmarks', { params }),
@@ -196,6 +225,8 @@ export const communicationAPI = {
   createAnnouncement: (data) => api.post('/communication/announcements', data),
   updateAnnouncement: (id, data) => api.put(`/communication/announcements/${id}`, data),
   deleteAnnouncement: (id) => api.delete(`/communication/announcements/${id}`),
+  bulkDeleteAnnouncements: (ids) => api.post('/communication/announcements/bulk-delete', { ids }),
+  bulkUpdateAnnouncements: (ids, data) => api.post('/communication/announcements/bulk-update', { ids, data }),
 
   // Messages
   getInbox: (params) => api.get('/communication/messages/inbox', { params }),
@@ -212,6 +243,8 @@ export const communicationAPI = {
   createArticle: (data) => api.post('/communication/knowledge', data),
   updateArticle: (id, data) => api.put(`/communication/knowledge/${id}`, data),
   deleteArticle: (id) => api.delete(`/communication/knowledge/${id}`),
+  bulkDeleteArticles: (ids) => api.post('/communication/knowledge/bulk-delete', { ids }),
+  bulkUpdateArticles: (ids, data) => api.post('/communication/knowledge/bulk-update', { ids, data }),
 
   // Tickets
   getTickets: (params) => api.get('/communication/tickets', { params }),
@@ -219,6 +252,8 @@ export const communicationAPI = {
   createTicket: (data) => api.post('/communication/tickets', data),
   updateTicket: (id, data) => api.put(`/communication/tickets/${id}`, data),
   deleteTicket: (id) => api.delete(`/communication/tickets/${id}`),
+  bulkDeleteTickets: (ids) => api.post('/communication/tickets/bulk-delete', { ids }),
+  bulkUpdateTickets: (ids, data) => api.post('/communication/tickets/bulk-update', { ids, data }),
 
   getStats: () => api.get('/communication/stats'),
   getCategories: () => api.get('/communication/meta/categories')
@@ -249,10 +284,7 @@ export const aiAPI = {
 
 // Metadata - Enums and Categories
 export const metadataAPI = {
-  // All enums at once
   getEnums: () => api.get('/metadata/enums'),
-
-  // Individual enums
   getUserRoles: () => api.get('/metadata/enums/userRoles'),
   getLocationStatuses: () => api.get('/metadata/enums/locationStatuses'),
   getAuditStatuses: () => api.get('/metadata/enums/auditStatuses'),
@@ -262,11 +294,7 @@ export const metadataAPI = {
   getTicketStatuses: () => api.get('/metadata/enums/ticketStatuses'),
   getContentTypes: () => api.get('/metadata/enums/contentTypes'),
   getFrequencies: () => api.get('/metadata/enums/frequencies'),
-
-  // All categories at once
   getCategories: () => api.get('/metadata/categories'),
-
-  // Individual category endpoints
   getProductCategories: () => api.get('/metadata/categories/products'),
   getBrandGuidelineCategories: () => api.get('/metadata/categories/brand-guidelines'),
   getMarketingTemplateCategories: () => api.get('/metadata/categories/marketing-templates'),

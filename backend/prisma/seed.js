@@ -375,7 +375,112 @@ async function main() {
     })
   ]);
 
-  console.log('Created 6 compliance checklists');
+  // Additional compliance checklists to reach 15+
+  const moreComplianceChecklists = await Promise.all([
+    prisma.complianceChecklist.create({
+      data: { name: 'Parking Lot & Exterior Audit', category: 'Exterior', description: 'Exterior appearance and parking lot check',
+        items: { create: [
+          { item: 'Parking lot clean', order: 0 },
+          { item: 'Signage illuminated', order: 1, isCritical: true },
+          { item: 'Landscaping maintained', order: 2 },
+          { item: 'Drive-thru clean', order: 3 },
+          { item: 'Dumpster area tidy', order: 4 }
+        ]}
+      }
+    }),
+    prisma.complianceChecklist.create({
+      data: { name: 'Employee Health Compliance', category: 'Health', description: 'Employee health and hygiene check',
+        items: { create: [
+          { item: 'Handwashing compliance', order: 0, isCritical: true },
+          { item: 'Glove usage proper', order: 1, isCritical: true },
+          { item: 'Hair restraints worn', order: 2 },
+          { item: 'No sick employees working', order: 3, isCritical: true },
+          { item: 'Uniforms clean', order: 4 }
+        ]}
+      }
+    }),
+    prisma.complianceChecklist.create({
+      data: { name: 'Delivery & Receiving Audit', category: 'Operations', description: 'Delivery receiving process check',
+        items: { create: [
+          { item: 'Invoices checked', order: 0 },
+          { item: 'Temperatures verified', order: 1, isCritical: true },
+          { item: 'Products properly stored', order: 2 },
+          { item: 'No damaged goods accepted', order: 3 },
+          { item: 'Receiving area clean', order: 4 }
+        ]}
+      }
+    }),
+    prisma.complianceChecklist.create({
+      data: { name: 'ADA Compliance Audit', category: 'Compliance', description: 'Americans with Disabilities Act compliance',
+        items: { create: [
+          { item: 'Accessible entrance', order: 0, isCritical: true },
+          { item: 'Accessible restrooms', order: 1, isCritical: true },
+          { item: 'Accessible seating', order: 2 },
+          { item: 'Signage visible', order: 3 },
+          { item: 'Service counter accessible', order: 4 }
+        ]}
+      }
+    }),
+    prisma.complianceChecklist.create({
+      data: { name: 'Fire Safety Compliance', category: 'Safety', description: 'Fire safety equipment and procedures check',
+        items: { create: [
+          { item: 'Extinguishers charged', order: 0, isCritical: true },
+          { item: 'Exit signs lit', order: 1, isCritical: true },
+          { item: 'Exits unblocked', order: 2, isCritical: true },
+          { item: 'Sprinklers functional', order: 3, isCritical: true },
+          { item: 'Fire plan posted', order: 4 }
+        ]}
+      }
+    }),
+    prisma.complianceChecklist.create({
+      data: { name: 'Waste Management Audit', category: 'Environmental', description: 'Waste handling and recycling compliance',
+        items: { create: [
+          { item: 'Proper waste separation', order: 0 },
+          { item: 'Grease trap maintained', order: 1 },
+          { item: 'Recycling bins labeled', order: 2 },
+          { item: 'Waste log up to date', order: 3 },
+          { item: 'Dumpster schedule current', order: 4 }
+        ]}
+      }
+    }),
+    prisma.complianceChecklist.create({
+      data: { name: 'Marketing Compliance', category: 'Marketing', description: 'Marketing materials and messaging compliance',
+        items: { create: [
+          { item: 'Only approved materials', order: 0, isCritical: true },
+          { item: 'Prices current', order: 1 },
+          { item: 'Promotions authorized', order: 2 },
+          { item: 'Social media compliant', order: 3 },
+          { item: 'No unauthorized signage', order: 4 }
+        ]}
+      }
+    }),
+    prisma.complianceChecklist.create({
+      data: { name: 'Financial Controls Audit', category: 'Finance', description: 'Cash handling and financial controls check',
+        items: { create: [
+          { item: 'Safe secure', order: 0, isCritical: true },
+          { item: 'Cash counts documented', order: 1, isCritical: true },
+          { item: 'Deposits timely', order: 2 },
+          { item: 'Void procedures followed', order: 3 },
+          { item: 'POS access controls', order: 4 }
+        ]}
+      }
+    }),
+    prisma.complianceChecklist.create({
+      data: { name: 'Training Compliance Audit', category: 'Training', description: 'Staff training and certification compliance',
+        items: { create: [
+          { item: 'All certs current', order: 0, isCritical: true },
+          { item: 'New hire training complete', order: 1 },
+          { item: 'Annual refresh done', order: 2 },
+          { item: 'Training records on file', order: 3 },
+          { item: 'Manager certifications', order: 4 }
+        ]}
+      }
+    })
+  ]);
+
+  complianceChecklists.push(...moreComplianceChecklists);
+
+  console.log('Created 15 compliance checklists');
 
   // Create operational checklists (8+)
   await Promise.all([
@@ -434,7 +539,59 @@ async function main() {
     ]}}})
   ]);
 
-  console.log('Created 8 operational checklists');
+  // Additional operational checklists to reach 15+
+  await Promise.all([
+    prisma.operationalChecklist.create({ data: { name: 'Rush Hour Prep', category: 'Daily Operations', frequency: 'daily', description: 'Pre-rush preparation tasks', items: { create: [
+      { item: 'Extra patties prepped', order: 0 },
+      { item: 'Backup fries ready', order: 1 },
+      { item: 'Drive-thru lane clear', order: 2 },
+      { item: 'All registers staffed', order: 3 },
+      { item: 'Drinks fully stocked', order: 4 }
+    ]}}}),
+    prisma.operationalChecklist.create({ data: { name: 'Delivery Order Check', category: 'Daily Operations', frequency: 'daily', description: 'Verify delivery orders before dispatch', items: { create: [
+      { item: 'Order accuracy verified', order: 0 },
+      { item: 'Items properly packaged', order: 1 },
+      { item: 'Utensils and napkins', order: 2 },
+      { item: 'Order sealed', order: 3 },
+      { item: 'Driver notified', order: 4 }
+    ]}}}),
+    prisma.operationalChecklist.create({ data: { name: 'Weekly Safety Walk', category: 'Safety', frequency: 'weekly', description: 'Weekly safety inspection', items: { create: [
+      { item: 'Floor mats secure', order: 0 },
+      { item: 'Wet floor signs available', order: 1 },
+      { item: 'First aid kit stocked', order: 2 },
+      { item: 'Fire extinguisher check', order: 3 },
+      { item: 'Emergency exits clear', order: 4 }
+    ]}}}),
+    prisma.operationalChecklist.create({ data: { name: 'Restroom Check', category: 'Cleaning', frequency: 'daily', description: 'Hourly restroom maintenance', items: { create: [
+      { item: 'Paper towels stocked', order: 0 },
+      { item: 'Soap dispensers full', order: 1 },
+      { item: 'Floors clean and dry', order: 2 },
+      { item: 'Trash emptied', order: 3 },
+      { item: 'Mirrors clean', order: 4 }
+    ]}}}),
+    prisma.operationalChecklist.create({ data: { name: 'Cash Drop Procedure', category: 'Finance', frequency: 'daily', description: 'Mid-day cash drop process', items: { create: [
+      { item: 'Count excess cash', order: 0 },
+      { item: 'Fill out deposit slip', order: 1 },
+      { item: 'Place in safe', order: 2 },
+      { item: 'Log in register', order: 3 }
+    ]}}}),
+    prisma.operationalChecklist.create({ data: { name: 'Weekly Equipment Check', category: 'Maintenance', frequency: 'weekly', description: 'Weekly equipment inspection', items: { create: [
+      { item: 'Clean grill plates', order: 0 },
+      { item: 'Check fryer oil quality', order: 1 },
+      { item: 'Test all burners', order: 2 },
+      { item: 'Inspect walk-in seals', order: 3 },
+      { item: 'Check dishwasher temps', order: 4 }
+    ]}}}),
+    prisma.operationalChecklist.create({ data: { name: 'Monthly P&L Review', category: 'Finance', frequency: 'monthly', description: 'Monthly financial review tasks', items: { create: [
+      { item: 'Review labor costs', order: 0 },
+      { item: 'Check food cost %', order: 1 },
+      { item: 'Analyze waste report', order: 2 },
+      { item: 'Compare to budget', order: 3 },
+      { item: 'Create action plan', order: 4 }
+    ]}}})
+  ]);
+
+  console.log('Created 15 operational checklists');
 
   // Create SOPs (16+)
   await Promise.all([

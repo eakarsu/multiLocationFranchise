@@ -1,18 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { dashboardAPI } from '../services/api';
+import { CardSkeleton } from '../components/LoadingSkeleton';
 import {
   FiMapPin, FiUsers, FiDollarSign, FiTrendingUp,
   FiAlertCircle, FiCheckCircle, FiClock, FiPercent
 } from 'react-icons/fi';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell
+  ResponsiveContainer, LineChart, Line
 } from 'recharts';
 
 const Dashboard = () => {
   const { user, isCorporate } = useAuth();
+  const navigate = useNavigate();
   const [overview, setOverview] = useState(null);
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -50,11 +52,120 @@ const Dashboard = () => {
 
   if (loading) {
     return (
-      <div className="loading">
-        <div className="spinner"></div>
+      <div>
+        <div className="page-header">
+          <div>
+            <h1 className="page-title">Dashboard</h1>
+            <p className="page-subtitle">Loading...</p>
+          </div>
+        </div>
+        <CardSkeleton count={4} />
+        <div style={{ marginTop: '24px' }}><CardSkeleton count={4} /></div>
       </div>
     );
   }
+
+  const statCards = [
+    {
+      icon: <FiMapPin />,
+      iconClass: 'blue',
+      title: 'Active Locations',
+      value: overview?.locations?.active || 0,
+      subtitle: `${overview?.locations?.pending || 0} pending`,
+      subtitleClass: 'positive',
+      path: '/locations'
+    },
+    {
+      icon: <FiDollarSign />,
+      iconClass: 'green',
+      title: 'MTD Revenue',
+      value: formatCurrency(overview?.financial?.mtd?.revenue || 0),
+      subtitle: `YTD: ${formatCurrency(overview?.financial?.ytd?.revenue || 0)}`,
+      subtitleClass: 'positive',
+      path: '/financial'
+    },
+    {
+      icon: <FiTrendingUp />,
+      iconClass: 'orange',
+      title: 'MTD Net Profit',
+      value: formatCurrency(overview?.financial?.mtd?.netProfit || 0),
+      subtitle: `YTD: ${formatCurrency(overview?.financial?.ytd?.netProfit || 0)}`,
+      subtitleClass: 'positive',
+      path: '/financial'
+    },
+    {
+      icon: <FiAlertCircle />,
+      iconClass: 'red',
+      title: 'Open Issues',
+      value: overview?.issues?.open || 0,
+      subtitle: `${overview?.issues?.critical || 0} critical`,
+      subtitleClass: 'negative',
+      path: '/operations/issues'
+    }
+  ];
+
+  const statCards2 = [
+    {
+      icon: <FiCheckCircle />,
+      iconClass: 'blue',
+      title: 'Compliance Score',
+      value: `${(overview?.compliance?.avgScore || 0).toFixed(1)}%`,
+      subtitle: `${overview?.compliance?.completed || 0} audits completed`,
+      subtitleClass: '',
+      path: '/operations/audits'
+    },
+    {
+      icon: <FiClock />,
+      iconClass: 'green',
+      title: 'Scheduled Audits',
+      value: overview?.compliance?.scheduled || 0,
+      subtitle: `${overview?.compliance?.overdue || 0} overdue`,
+      subtitleClass: 'negative',
+      path: '/operations/audits'
+    },
+    {
+      icon: <FiPercent />,
+      iconClass: 'orange',
+      title: 'Royalties Pending',
+      value: overview?.royalties?.pending || 0,
+      subtitle: `${overview?.royalties?.overdue || 0} overdue`,
+      subtitleClass: 'negative',
+      path: '/financial/royalties'
+    },
+    {
+      icon: <FiUsers />,
+      iconClass: 'blue',
+      title: 'Total Users',
+      value: overview?.users?.total || 0,
+      subtitle: '',
+      subtitleClass: '',
+      path: '/users'
+    }
+  ];
+
+  const renderStatCard = (card) => (
+    <div
+      key={card.title}
+      className="stat-card"
+      onClick={() => navigate(card.path)}
+      style={{ cursor: 'pointer', transition: 'transform 0.2s, box-shadow 0.2s' }}
+      onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)'; }}
+      onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = ''; }}
+    >
+      <div className={`stat-icon ${card.iconClass}`}>
+        {card.icon}
+      </div>
+      <div className="stat-content">
+        <h3>{card.title}</h3>
+        <div className="stat-value">{card.value}</div>
+        {card.subtitle && (
+          <div className={`stat-change ${card.subtitleClass}`}>
+            {card.subtitle}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <div>
@@ -65,118 +176,21 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Stats Grid */}
+      {/* Stats Grid - Clickable Cards */}
       <div className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-icon blue">
-            <FiMapPin />
-          </div>
-          <div className="stat-content">
-            <h3>Active Locations</h3>
-            <div className="stat-value">{overview?.locations?.active || 0}</div>
-            <div className="stat-change positive">
-              {overview?.locations?.pending || 0} pending
-            </div>
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-icon green">
-            <FiDollarSign />
-          </div>
-          <div className="stat-content">
-            <h3>MTD Revenue</h3>
-            <div className="stat-value">{formatCurrency(overview?.financial?.mtd?.revenue || 0)}</div>
-            <div className="stat-change positive">
-              YTD: {formatCurrency(overview?.financial?.ytd?.revenue || 0)}
-            </div>
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-icon orange">
-            <FiTrendingUp />
-          </div>
-          <div className="stat-content">
-            <h3>MTD Net Profit</h3>
-            <div className="stat-value">{formatCurrency(overview?.financial?.mtd?.netProfit || 0)}</div>
-            <div className="stat-change positive">
-              YTD: {formatCurrency(overview?.financial?.ytd?.netProfit || 0)}
-            </div>
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-icon red">
-            <FiAlertCircle />
-          </div>
-          <div className="stat-content">
-            <h3>Open Issues</h3>
-            <div className="stat-value">{overview?.issues?.open || 0}</div>
-            <div className="stat-change negative">
-              {overview?.issues?.critical || 0} critical
-            </div>
-          </div>
-        </div>
+        {statCards.map(renderStatCard)}
       </div>
 
       {/* Second Row Stats */}
       <div className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-icon blue">
-            <FiCheckCircle />
-          </div>
-          <div className="stat-content">
-            <h3>Compliance Score</h3>
-            <div className="stat-value">{(overview?.compliance?.avgScore || 0).toFixed(1)}%</div>
-            <div className="stat-change">
-              {overview?.compliance?.completed || 0} audits completed
-            </div>
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-icon green">
-            <FiClock />
-          </div>
-          <div className="stat-content">
-            <h3>Scheduled Audits</h3>
-            <div className="stat-value">{overview?.compliance?.scheduled || 0}</div>
-            <div className="stat-change negative">
-              {overview?.compliance?.overdue || 0} overdue
-            </div>
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-icon orange">
-            <FiPercent />
-          </div>
-          <div className="stat-content">
-            <h3>Royalties Pending</h3>
-            <div className="stat-value">{overview?.royalties?.pending || 0}</div>
-            <div className="stat-change negative">
-              {overview?.royalties?.overdue || 0} overdue
-            </div>
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-icon blue">
-            <FiUsers />
-          </div>
-          <div className="stat-content">
-            <h3>Total Users</h3>
-            <div className="stat-value">{overview?.users?.total || 0}</div>
-          </div>
-        </div>
+        {statCards2.map(renderStatCard)}
       </div>
 
       {/* Charts Section */}
       {analytics && (
         <div className="grid-2" style={{ marginTop: '24px' }}>
           {/* Revenue Trend */}
-          <div className="card">
+          <div className="card" onClick={() => navigate('/financial')} style={{ cursor: 'pointer' }}>
             <div className="card-header">
               <h2 className="card-title">Revenue Trend</h2>
             </div>
@@ -206,7 +220,7 @@ const Dashboard = () => {
           </div>
 
           {/* Territory Performance */}
-          <div className="card">
+          <div className="card" onClick={() => navigate('/territories')} style={{ cursor: 'pointer' }}>
             <div className="card-header">
               <h2 className="card-title">Territory Performance</h2>
             </div>
@@ -252,12 +266,16 @@ const Dashboard = () => {
               </thead>
               <tbody>
                 {analytics.locationPerformance.slice(0, 5).map((loc, index) => (
-                  <tr key={loc.location?.id || index}>
+                  <tr
+                    key={loc.location?.id || index}
+                    onClick={() => navigate(`/locations/${loc.location?.id}`)}
+                    style={{ cursor: 'pointer' }}
+                  >
                     <td>#{index + 1}</td>
                     <td>
-                      <Link to={`/locations/${loc.location?.id}`} style={{ color: 'var(--primary)' }}>
+                      <span style={{ color: 'var(--primary)', fontWeight: 500 }}>
                         {loc.location?.name}
-                      </Link>
+                      </span>
                     </td>
                     <td>{loc.location?.code}</td>
                     <td>{formatCurrency(loc.revenue)}</td>
@@ -285,7 +303,11 @@ const Dashboard = () => {
             </div>
             <div style={{ display: 'flex', gap: '16px', padding: '20px 0' }}>
               {Object.entries(analytics.issueStats).map(([status, count], index) => (
-                <div key={status} style={{ flex: 1, textAlign: 'center' }}>
+                <div
+                  key={status}
+                  style={{ flex: 1, textAlign: 'center', cursor: 'pointer' }}
+                  onClick={() => navigate('/operations/issues')}
+                >
                   <div style={{
                     width: '60px',
                     height: '60px',

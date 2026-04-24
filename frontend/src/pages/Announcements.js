@@ -1,8 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { communicationAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { FiPlus, FiEdit2, FiTrash2, FiBell, FiSend, FiCalendar, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
+import { FiPlus, FiEdit2, FiTrash2, FiBell, FiSend, FiCalendar, FiChevronLeft, FiChevronRight, FiX } from 'react-icons/fi';
 import toast from 'react-hot-toast';
+import Pagination from '../components/Pagination';
+import SortableHeader from '../components/SortableHeader';
+import ExportButtons from '../components/ExportButtons';
+import ConfirmDialog from '../components/ConfirmDialog';
+import { PageSkeleton } from '../components/LoadingSkeleton';
 
 // Modern Date Picker Component
 const DatePicker = ({ value, onChange, placeholder }) => {
@@ -296,13 +301,32 @@ const Announcements = () => {
   const [editing, setEditing] = useState(null);
   const [formData, setFormData] = useState({ title: '', content: '', priority: 'MEDIUM', targetRoles: [], isPublished: false, expiresAt: '' });
 
+  // New state for pagination, sort, bulk, confirm, detail
+  const [pagination, setPagination] = useState(null);
+  const [page, setPage] = useState(1);
+  const [sortBy, setSortBy] = useState('createdAt');
+  const [sortOrder, setSortOrder] = useState('desc');
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [confirmDialog, setConfirmDialog] = useState({ isOpen: false });
+  const [detailItem, setDetailItem] = useState(null);
+  const [showBulkUpdateModal, setShowBulkUpdateModal] = useState(false);
+  const [bulkUpdateData, setBulkUpdateData] = useState({});
+
   const roles = ['SUPER_ADMIN', 'CORPORATE_ADMIN', 'REGIONAL_MANAGER', 'LOCATION_MANAGER', 'STAFF'];
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => { loadData(); }, [page, sortBy, sortOrder]);
 
   const loadData = async () => {
-    try { const res = await communicationAPI.getAnnouncements({ isPublished: isCorporate() ? undefined : 'true' }); setItems(res.data); }
-    catch (error) { toast.error('Failed to load announcements'); }
+    try {
+      setLoading(true);
+      const res = await communicationAPI.getAnnouncements({
+        isPublished: isCorporate() ? undefined : 'true',
+        page, limit: 15, sortBy, sortOrder
+      });
+      setItems(res.data.data);
+      setPagination(res.data.pagination);
+      setSelectedIds([]);
+    } catch (error) { toast.error('Failed to load announcements'); }
     finally { setLoading(false); }
   };
 
@@ -316,11 +340,67 @@ const Announcements = () => {
     } catch (error) { toast.error('Failed'); }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('Delete this announcement?')) return;
-    try { await communicationAPI.deleteAnnouncement(id); toast.success('Deleted'); loadData(); }
-    catch (error) { toast.error('Failed'); }
+  const handleDelete = (id) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Delete Announcement',
+      message: 'Are you sure you want to delete this announcement? This action cannot be undone.',
+      variant: 'danger',
+      confirmLabel: 'Delete',
+      onConfirm: async () => {
+        try {
+          await communicationAPI.deleteAnnouncement(id);
+          toast.success('Deleted');
+          setConfirmDialog({ isOpen: false });
+          setDetailItem(null);
+          loadData();
+        } catch (error) { toast.error('Failed'); setConfirmDialog({ isOpen: false }); }
+      },
+      onCancel: () => setConfirmDialog({ isOpen: false })
+    });
   };
+
+  const handleBulkDelete = () => {
+    if (selectedIds.length === 0) return;
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Delete Selected Announcements',
+      message: `Are you sure you want to delete ${selectedIds.length} announcement(s)? This action cannot be undone.`,
+      variant: 'danger',
+      confirmLabel: `Delete ${selectedIds.length}`,
+      onConfirm: async () => {
+        try {
+          await communicationAPI.bulkDeleteAnnouncements(selectedIds);
+          toast.success(`${selectedIds.length} announcements deleted`);
+          setSelectedIds([]);
+          setConfirmDialog({ isOpen: false });
+          loadData();
+        } catch (error) { toast.error('Failed to delete'); setConfirmDialog({ isOpen: false }); }
+      },
+      onCancel: () => setConfirmDialog({ isOpen: false })
+    });
+  };
+
+  const handleBulkUpdate = async () => {
+    if (selectedIds.length === 0) return;
+    try {
+      await communicationAPI.bulkUpdateAnnouncements({ ids: selectedIds, data: bulkUpdateData });
+      toast.success(`${selectedIds.length} announcements updated`);
+      setSelectedIds([]);
+      setShowBulkUpdateModal(false);
+      setBulkUpdateData({});
+      loadData();
+    } catch (error) { toast.error('Failed to update'); }
+  };
+
+  const handleSort = (field) => {
+    if (sortBy === field) setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+    else { setSortBy(field); setSortOrder('asc'); }
+    setPage(1);
+  };
+
+  const toggleSelect = (id) => setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const toggleSelectAll = () => setSelectedIds(prev => prev.length === items.length ? [] : items.map(i => i.id));
 
   const priorityBadge = (priority) => {
     const classes = { LOW: 'badge-info', MEDIUM: 'badge-warning', HIGH: 'badge-danger', CRITICAL: 'badge-danger' };
@@ -329,20 +409,62 @@ const Announcements = () => {
 
   const formatDate = (date) => date ? new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '-';
 
-  if (loading) return <div className="loading"><div className="spinner"></div></div>;
+  const exportColumns = [
+    { label: 'Title', accessor: 'title' },
+    { label: 'Priority', accessor: 'priority' },
+    { label: 'Published', accessor: (d) => d.isPublished ? 'Yes' : 'No' },
+    { label: 'Created', accessor: (d) => formatDate(d.createdAt) }
+  ];
+
+  if (loading && items.length === 0) return <PageSkeleton />;
 
   return (
     <div>
       <div className="page-header">
-        <div><h1 className="page-title">Announcements</h1><p className="page-subtitle">{items.length} announcements</p></div>
-        {isCorporate() && <button className="btn btn-primary" onClick={() => { setEditing(null); setFormData({ title: '', content: '', priority: 'MEDIUM', targetRoles: [], isPublished: false, expiresAt: '' }); setShowModal(true); }}><FiPlus /> New Announcement</button>}
+        <div><h1 className="page-title">Announcements</h1><p className="page-subtitle">{pagination?.total || items.length} announcements</p></div>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <ExportButtons data={items} columns={exportColumns} filename="announcements" title="Announcements Report" />
+          {isCorporate() && <button className="btn btn-primary" onClick={() => { setEditing(null); setFormData({ title: '', content: '', priority: 'MEDIUM', targetRoles: [], isPublished: false, expiresAt: '' }); setShowModal(true); }}><FiPlus /> New Announcement</button>}
+        </div>
+      </div>
+
+      {/* Bulk Action Bar */}
+      {selectedIds.length > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px',
+          background: 'var(--primary)', borderRadius: '8px', marginBottom: '12px', color: 'white'
+        }}>
+          <span style={{ fontWeight: 600 }}>{selectedIds.length} selected</span>
+          <button className="btn btn-sm btn-danger" onClick={handleBulkDelete}><FiTrash2 /> Delete Selected</button>
+          <button className="btn btn-sm btn-secondary" onClick={() => { setBulkUpdateData({}); setShowBulkUpdateModal(true); }}><FiEdit2 /> Bulk Update</button>
+          <button className="btn btn-sm btn-secondary" onClick={() => setSelectedIds([])} style={{ marginLeft: 'auto' }}><FiX /> Clear</button>
+        </div>
+      )}
+
+      {/* Sort controls */}
+      <div className="filter-bar" style={{ marginBottom: '16px' }}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Sort by:</span>
+          <select className="form-select" style={{ width: '150px' }} value={sortBy} onChange={(e) => { setSortBy(e.target.value); setPage(1); }}>
+            <option value="createdAt">Date Created</option>
+            <option value="title">Title</option>
+            <option value="priority">Priority</option>
+          </select>
+          <select className="form-select" style={{ width: '100px' }} value={sortOrder} onChange={(e) => { setSortOrder(e.target.value); setPage(1); }}>
+            <option value="desc">Newest</option>
+            <option value="asc">Oldest</option>
+          </select>
+        </div>
       </div>
 
       <div style={{ display: 'grid', gap: '16px' }}>
         {items.map(item => (
-          <div key={item.id} className="card" style={{ borderLeft: `4px solid ${item.priority === 'CRITICAL' ? 'var(--danger)' : item.priority === 'HIGH' ? 'var(--warning)' : 'var(--primary)'}` }}>
+          <div key={item.id} className="card" style={{ borderLeft: `4px solid ${item.priority === 'CRITICAL' ? 'var(--danger)' : item.priority === 'HIGH' ? 'var(--warning)' : 'var(--primary)'}`, cursor: 'pointer' }} onClick={() => setDetailItem(item)}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center' }}>
+                  <input type="checkbox" checked={selectedIds.includes(item.id)} onChange={() => toggleSelect(item.id)} />
+                </div>
                 <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FiBell /></div>
                 <div>
                   <h3 style={{ fontSize: '1.1rem', margin: 0 }}>{item.title}</h3>
@@ -357,7 +479,7 @@ const Announcements = () => {
             <p style={{ marginBottom: '12px', lineHeight: 1.7 }}>{item.content}</p>
             {item.targetRoles?.length > 0 && <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '12px' }}>Target: {item.targetRoles.join(', ')}</div>}
             {isCorporate() && (
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ display: 'flex', gap: '8px' }} onClick={e => e.stopPropagation()}>
                 {!item.isPublished && <button className="btn btn-sm btn-success" onClick={async () => { await communicationAPI.updateAnnouncement(item.id, { isPublished: true }); toast.success('Published'); loadData(); }}><FiSend /> Publish</button>}
                 <button className="btn btn-sm btn-secondary" onClick={() => { setEditing(item); setFormData({ title: item.title, content: item.content, priority: item.priority, targetRoles: item.targetRoles || [], isPublished: item.isPublished, expiresAt: item.expiresAt ? item.expiresAt.split('T')[0] : '' }); setShowModal(true); }}><FiEdit2 /></button>
                 <button className="btn btn-sm btn-danger" onClick={() => handleDelete(item.id)}><FiTrash2 /></button>
@@ -366,6 +488,91 @@ const Announcements = () => {
           </div>
         ))}
       </div>
+
+      <Pagination pagination={pagination} onPageChange={setPage} />
+
+      {/* Detail Modal */}
+      {detailItem && (
+        <div className="modal-overlay" onClick={() => setDetailItem(null)}>
+          <div className="modal" style={{ maxWidth: '700px' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">{detailItem.title}</h3>
+              <button className="modal-close" onClick={() => setDetailItem(null)}>&times;</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', alignItems: 'center' }}>
+                {priorityBadge(detailItem.priority)}
+                {!detailItem.isPublished && <span className="badge badge-warning">Draft</span>}
+                {detailItem.isPublished && <span className="badge badge-success">Published</span>}
+              </div>
+              <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
+                <div>By: {detailItem.author?.firstName} {detailItem.author?.lastName}</div>
+                <div>Created: {formatDate(detailItem.createdAt)}</div>
+                {detailItem.expiresAt && <div>Expires: {formatDate(detailItem.expiresAt)}</div>}
+                {detailItem.targetRoles?.length > 0 && <div>Target: {detailItem.targetRoles.join(', ')}</div>}
+              </div>
+              <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{detailItem.content}</div>
+            </div>
+            <div className="modal-footer">
+              {isCorporate() && (
+                <>
+                  <button className="btn btn-danger" onClick={() => handleDelete(detailItem.id)}><FiTrash2 /> Delete</button>
+                  <button className="btn btn-primary" onClick={() => {
+                    setEditing(detailItem);
+                    setFormData({
+                      title: detailItem.title,
+                      content: detailItem.content,
+                      priority: detailItem.priority,
+                      targetRoles: detailItem.targetRoles || [],
+                      isPublished: detailItem.isPublished,
+                      expiresAt: detailItem.expiresAt ? detailItem.expiresAt.split('T')[0] : ''
+                    });
+                    setDetailItem(null);
+                    setShowModal(true);
+                  }}><FiEdit2 /> Edit</button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Update Modal */}
+      {showBulkUpdateModal && (
+        <div className="modal-overlay" onClick={() => setShowBulkUpdateModal(false)}>
+          <div className="modal" style={{ maxWidth: '400px' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">Bulk Update {selectedIds.length} Announcements</h3>
+              <button className="modal-close" onClick={() => setShowBulkUpdateModal(false)}>&times;</button>
+            </div>
+            <div className="modal-body">
+              <div className="form-group">
+                <label className="form-label">Priority</label>
+                <select className="form-select" value={bulkUpdateData.priority || ''} onChange={(e) => setBulkUpdateData({ ...bulkUpdateData, priority: e.target.value })}>
+                  <option value="">-- No change --</option>
+                  <option value="LOW">Low</option>
+                  <option value="MEDIUM">Medium</option>
+                  <option value="HIGH">High</option>
+                  <option value="CRITICAL">Critical</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input
+                    type="checkbox"
+                    checked={bulkUpdateData.isPublished || false}
+                    onChange={(e) => setBulkUpdateData({ ...bulkUpdateData, isPublished: e.target.checked })}
+                  /> Publish all selected
+                </label>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setShowBulkUpdateModal(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleBulkUpdate}>Update</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
@@ -387,6 +594,8 @@ const Announcements = () => {
           </div>
         </div>
       )}
+
+      <ConfirmDialog {...confirmDialog} />
     </div>
   );
 };

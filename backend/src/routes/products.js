@@ -1,13 +1,15 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { authenticateToken, isCorporate } = require('../middleware/auth');
+const { getPaginationParams, paginatedResponse } = require('../utils/pagination');
 
 const router = express.Router();
 
-// Get all products
+// Get all products (with pagination and sorting)
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const { category, isActive, search } = req.query;
+    const { page, limit, skip, sortBy, sortOrder } = getPaginationParams(req.query);
 
     const where = {};
     if (category) where.category = category;
@@ -19,12 +21,17 @@ router.get('/', authenticateToken, async (req, res) => {
       ];
     }
 
-    const products = await req.prisma.product.findMany({
-      where,
-      orderBy: { name: 'asc' }
-    });
+    const [products, total] = await Promise.all([
+      req.prisma.product.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { [sortBy]: sortOrder }
+      }),
+      req.prisma.product.count({ where })
+    ]);
 
-    res.json(products);
+    res.json(paginatedResponse(products, total, page, limit));
   } catch (error) {
     console.error('Get products error:', error);
     res.status(500).json({ error: 'Failed to get products' });
@@ -83,6 +90,56 @@ router.post('/', authenticateToken, isCorporate, [
   } catch (error) {
     console.error('Create product error:', error);
     res.status(500).json({ error: 'Failed to create product' });
+  }
+});
+
+// Bulk delete products (soft delete)
+router.post('/bulk-delete', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    const result = await req.prisma.product.updateMany({
+      where: { id: { in: ids } },
+      data: { isActive: false }
+    });
+
+    res.json({ message: `${result.count} products deleted`, count: result.count });
+  } catch (error) {
+    console.error('Bulk delete products error:', error);
+    res.status(500).json({ error: 'Failed to bulk delete products' });
+  }
+});
+
+// Bulk update products
+router.post('/bulk-update', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids, data } = req.body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    if (!data || typeof data !== 'object') {
+      return res.status(400).json({ error: 'data object is required' });
+    }
+
+    const updates = ids.map(id =>
+      req.prisma.product.update({
+        where: { id },
+        data
+      })
+    );
+
+    const results = await Promise.all(updates);
+
+    res.json({ message: `${results.length} products updated`, count: results.length });
+  } catch (error) {
+    console.error('Bulk update products error:', error);
+    res.status(500).json({ error: 'Failed to bulk update products' });
   }
 });
 

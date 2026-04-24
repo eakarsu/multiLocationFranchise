@@ -4,6 +4,11 @@ import { useAuth } from '../context/AuthContext';
 import { useMetadata } from '../hooks/useMetadata';
 import { FiPlus, FiEdit2, FiTrash2, FiAlertCircle } from 'react-icons/fi';
 import toast from 'react-hot-toast';
+import Pagination from '../components/Pagination';
+import SortableHeader from '../components/SortableHeader';
+import ExportButtons from '../components/ExportButtons';
+import ConfirmDialog from '../components/ConfirmDialog';
+import { PageSkeleton } from '../components/LoadingSkeleton';
 
 const IssueReports = () => {
   const { isCorporate, user } = useAuth();
@@ -17,19 +22,41 @@ const IssueReports = () => {
   const [editing, setEditing] = useState(null);
   const [formData, setFormData] = useState({ locationId: '', title: '', description: '', category: '', priority: 'MEDIUM', status: 'OPEN', resolution: '' });
 
-  useEffect(() => { loadData(); }, [statusFilter, priorityFilter]);
+  // Pagination, sort, bulk ops, confirm, detail state
+  const [pagination, setPagination] = useState(null);
+  const [page, setPage] = useState(1);
+  const [sortBy, setSortBy] = useState('createdAt');
+  const [sortOrder, setSortOrder] = useState('desc');
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [confirmDialog, setConfirmDialog] = useState({ isOpen: false });
+  const [detailItem, setDetailItem] = useState(null);
+  const [showBulkUpdateModal, setShowBulkUpdateModal] = useState(false);
+  const [bulkUpdateData, setBulkUpdateData] = useState({});
+
+  useEffect(() => { loadData(); }, [page, sortBy, sortOrder, statusFilter, priorityFilter]);
 
   const loadData = async () => {
     try {
+      setLoading(true);
       const [issueRes, locRes] = await Promise.all([
-        operationsAPI.getIssues({ status: statusFilter, priority: priorityFilter }),
+        operationsAPI.getIssues({ page, limit: 15, sortBy, sortOrder, status: statusFilter, priority: priorityFilter }),
         locationsAPI.getAll()
       ]);
-      setItems(issueRes.data);
+      setItems(issueRes.data.data);
+      setPagination(issueRes.data.pagination);
       setLocations(locRes.data);
     } catch (error) { toast.error('Failed to load issues'); }
     finally { setLoading(false); }
   };
+
+  const handleSort = (field) => {
+    if (sortBy === field) setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+    else { setSortBy(field); setSortOrder('asc'); }
+    setPage(1);
+  };
+
+  const toggleSelect = (id) => setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const toggleSelectAll = () => setSelectedIds(prev => prev.length === items.length ? [] : items.map(i => i.id));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -40,10 +67,39 @@ const IssueReports = () => {
     } catch (error) { toast.error('Failed'); }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('Delete this issue?')) return;
-    try { await operationsAPI.deleteIssue(id); toast.success('Deleted'); loadData(); }
-    catch (error) { toast.error('Failed'); }
+  const handleDelete = (id) => setConfirmDialog({
+    isOpen: true,
+    title: 'Delete Issue',
+    message: 'Are you sure you want to delete this issue?',
+    variant: 'danger',
+    onConfirm: async () => {
+      try { await operationsAPI.deleteIssue(id); toast.success('Deleted'); loadData(); }
+      catch { toast.error('Failed'); }
+      setConfirmDialog({ isOpen: false });
+    }
+  });
+
+  const handleBulkDelete = () => setConfirmDialog({
+    isOpen: true,
+    title: 'Delete Selected',
+    message: `Delete ${selectedIds.length} issues?`,
+    variant: 'danger',
+    onConfirm: async () => {
+      try { await operationsAPI.bulkDeleteIssues(selectedIds); toast.success('Deleted'); setSelectedIds([]); loadData(); }
+      catch { toast.error('Failed'); }
+      setConfirmDialog({ isOpen: false });
+    }
+  });
+
+  const handleBulkUpdate = async () => {
+    try {
+      await operationsAPI.bulkUpdateIssues(selectedIds, bulkUpdateData);
+      toast.success('Updated');
+      setSelectedIds([]);
+      setShowBulkUpdateModal(false);
+      setBulkUpdateData({});
+      loadData();
+    } catch { toast.error('Failed'); }
   };
 
   const statusBadge = (status) => {
@@ -56,38 +112,73 @@ const IssueReports = () => {
     return <span className={`badge ${classes[priority]}`}>{priority}</span>;
   };
 
-  if (loading) return <div className="loading"><div className="spinner"></div></div>;
+  const exportColumns = [
+    { key: 'title', label: 'Title' },
+    { key: 'category', label: 'Category' },
+    { key: 'priority', label: 'Priority' },
+    { key: 'status', label: 'Status' },
+    { key: 'location.name', label: 'Location' },
+    { key: 'reporter.firstName', label: 'Reporter' },
+    { key: 'createdAt', label: 'Created At' }
+  ];
+
+  if (loading && items.length === 0) return <PageSkeleton />;
 
   return (
     <div>
       <div className="page-header">
-        <div><h1 className="page-title">Issue Reports</h1><p className="page-subtitle">{items.length} issues</p></div>
-        <button className="btn btn-primary" onClick={() => { setEditing(null); setFormData({ locationId: user.locationId || '', title: '', description: '', category: '', priority: 'MEDIUM', status: 'OPEN', resolution: '' }); setShowModal(true); }}><FiPlus /> Report Issue</button>
+        <div><h1 className="page-title">Issue Reports</h1><p className="page-subtitle">{pagination?.total || items.length} issues</p></div>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <ExportButtons data={items} columns={exportColumns} filename="issue-reports" />
+          <button className="btn btn-primary" onClick={() => { setEditing(null); setFormData({ locationId: user.locationId || '', title: '', description: '', category: '', priority: 'MEDIUM', status: 'OPEN', resolution: '' }); setShowModal(true); }}><FiPlus /> Report Issue</button>
+        </div>
       </div>
 
       <div className="filter-bar">
-        <select className="form-select" style={{ width: '150px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <select className="form-select" style={{ width: '150px' }} value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}>
           <option value="">All Statuses</option>
           {enums.issueStatuses.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
         </select>
-        <select className="form-select" style={{ width: '150px' }} value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}>
+        <select className="form-select" style={{ width: '150px' }} value={priorityFilter} onChange={(e) => { setPriorityFilter(e.target.value); setPage(1); }}>
           <option value="">All Priorities</option>
           {enums.priorities.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
         </select>
       </div>
 
+      {selectedIds.length > 0 && (
+        <div className="card" style={{ marginBottom: '16px', padding: '12px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--primary-light, #eef2ff)' }}>
+          <span style={{ fontWeight: 500 }}>{selectedIds.length} item(s) selected</span>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button className="btn btn-sm btn-secondary" onClick={() => setShowBulkUpdateModal(true)}>Bulk Update</button>
+            <button className="btn btn-sm btn-danger" onClick={handleBulkDelete}>Delete Selected</button>
+            <button className="btn btn-sm btn-secondary" onClick={() => setSelectedIds([])}>Clear</button>
+          </div>
+        </div>
+      )}
+
       <div className="card">
         <table className="table">
-          <thead><tr><th>Issue</th><th>Location</th><th>Category</th><th>Priority</th><th>Status</th><th>Actions</th></tr></thead>
+          <thead>
+            <tr>
+              <th style={{ width: '40px' }}><input type="checkbox" checked={items.length > 0 && selectedIds.length === items.length} onChange={toggleSelectAll} /></th>
+              <SortableHeader label="Issue" field="title" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
+              <SortableHeader label="Location" field="locationId" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
+              <SortableHeader label="Category" field="category" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
+              <SortableHeader label="Priority" field="priority" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
+              <SortableHeader label="Status" field="status" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
+              <th>Actions</th>
+            </tr>
+          </thead>
           <tbody>
             {items.map(item => (
-              <tr key={item.id}>
+              <tr key={item.id} onClick={() => setDetailItem(item)} style={{ cursor: 'pointer' }}>
+                <td onClick={e => e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(item.id)} onChange={() => toggleSelect(item.id)} /></td>
                 <td><div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><FiAlertCircle style={{ color: item.priority === 'CRITICAL' ? 'var(--danger)' : 'var(--warning)' }} /><div><div style={{ fontWeight: 500 }}>{item.title}</div><div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>by {item.reporter?.firstName} {item.reporter?.lastName}</div></div></div></td>
                 <td>{item.location?.name || '-'}</td>
                 <td><span className="badge badge-info">{item.category}</span></td>
                 <td>{priorityBadge(item.priority)}</td>
                 <td>{statusBadge(item.status)}</td>
-                <td>
+                <td onClick={e => e.stopPropagation()}>
                   <div className="action-buttons">
                     <button className="btn btn-sm btn-secondary" onClick={() => { setEditing(item); setFormData({ locationId: item.locationId, title: item.title, description: item.description, category: item.category, priority: item.priority, status: item.status, resolution: item.resolution || '' }); setShowModal(true); }}><FiEdit2 /></button>
                     {isCorporate() && <button className="btn btn-sm btn-danger" onClick={() => handleDelete(item.id)}><FiTrash2 /></button>}
@@ -99,6 +190,45 @@ const IssueReports = () => {
         </table>
       </div>
 
+      {pagination && <Pagination pagination={pagination} onPageChange={setPage} />}
+
+      {/* Detail Modal */}
+      {detailItem && (
+        <div className="modal-overlay" onClick={() => setDetailItem(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header"><h3 className="modal-title">{detailItem.title}</h3><button className="modal-close" onClick={() => setDetailItem(null)}>&times;</button></div>
+            <div className="modal-body">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+                <div><strong>Location:</strong> {detailItem.location?.name || '-'}</div>
+                <div><strong>Category:</strong> <span className="badge badge-info">{detailItem.category}</span></div>
+                <div><strong>Priority:</strong> {priorityBadge(detailItem.priority)}</div>
+                <div><strong>Status:</strong> {statusBadge(detailItem.status)}</div>
+                <div><strong>Reporter:</strong> {detailItem.reporter?.firstName} {detailItem.reporter?.lastName}</div>
+                <div><strong>Created:</strong> {new Date(detailItem.createdAt).toLocaleDateString()}</div>
+              </div>
+              {detailItem.description && (
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: '16px', marginBottom: '16px' }}>
+                  <strong>Description:</strong>
+                  <p style={{ marginTop: '8px', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{detailItem.description}</p>
+                </div>
+              )}
+              {detailItem.resolution && (
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
+                  <strong>Resolution:</strong>
+                  <p style={{ marginTop: '8px', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{detailItem.resolution}</p>
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => { setDetailItem(null); setEditing(detailItem); setFormData({ locationId: detailItem.locationId, title: detailItem.title, description: detailItem.description, category: detailItem.category, priority: detailItem.priority, status: detailItem.status, resolution: detailItem.resolution || '' }); setShowModal(true); }}><FiEdit2 /> Edit</button>
+              {isCorporate() && <button className="btn btn-danger" onClick={() => { setDetailItem(null); handleDelete(detailItem.id); }}><FiTrash2 /> Delete</button>}
+              <button className="btn btn-secondary" onClick={() => setDetailItem(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create/Edit Modal */}
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
@@ -122,6 +252,44 @@ const IssueReports = () => {
           </div>
         </div>
       )}
+
+      {/* Bulk Update Modal */}
+      {showBulkUpdateModal && (
+        <div className="modal-overlay" onClick={() => setShowBulkUpdateModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header"><h3 className="modal-title">Bulk Update {selectedIds.length} Issues</h3><button className="modal-close" onClick={() => setShowBulkUpdateModal(false)}>&times;</button></div>
+            <div className="modal-body">
+              <div className="form-group">
+                <label className="form-label">Status</label>
+                <select className="form-select" value={bulkUpdateData.status || ''} onChange={(e) => setBulkUpdateData({...bulkUpdateData, status: e.target.value || undefined})}>
+                  <option value="">No change</option>
+                  {enums.issueStatuses.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Priority</label>
+                <select className="form-select" value={bulkUpdateData.priority || ''} onChange={(e) => setBulkUpdateData({...bulkUpdateData, priority: e.target.value || undefined})}>
+                  <option value="">No change</option>
+                  {enums.priorities.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setShowBulkUpdateModal(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleBulkUpdate}>Update All</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        variant={confirmDialog.variant}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={() => setConfirmDialog({ isOpen: false })}
+      />
     </div>
   );
 };

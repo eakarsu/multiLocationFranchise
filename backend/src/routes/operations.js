@@ -1,6 +1,7 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { authenticateToken, isCorporate, isManager } = require('../middleware/auth');
+const { getPaginationParams, paginatedResponse } = require('../utils/pagination');
 
 const router = express.Router();
 
@@ -12,17 +13,23 @@ const router = express.Router();
 router.get('/sops', authenticateToken, async (req, res) => {
   try {
     const { category, isActive } = req.query;
+    const { page, limit, skip, sortBy, sortOrder } = getPaginationParams(req.query);
 
     const where = {};
     if (category) where.category = category;
     if (isActive !== undefined) where.isActive = isActive === 'true';
 
-    const sops = await req.prisma.sOP.findMany({
-      where,
-      orderBy: { title: 'asc' }
-    });
+    const [sops, total] = await Promise.all([
+      req.prisma.sOP.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { [sortBy]: sortOrder }
+      }),
+      req.prisma.sOP.count({ where })
+    ]);
 
-    res.json(sops);
+    res.json(paginatedResponse(sops, total, page, limit));
   } catch (error) {
     console.error('Get SOPs error:', error);
     res.status(500).json({ error: 'Failed to get SOPs' });
@@ -104,6 +111,52 @@ router.delete('/sops/:id', authenticateToken, isCorporate, async (req, res) => {
   }
 });
 
+// Bulk delete SOPs
+router.post('/sops/bulk-delete', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    const result = await req.prisma.sOP.updateMany({
+      where: { id: { in: ids } },
+      data: { isActive: false }
+    });
+
+    res.json({ message: 'SOPs deleted successfully', count: result.count });
+  } catch (error) {
+    console.error('Bulk delete SOPs error:', error);
+    res.status(500).json({ error: 'Failed to bulk delete SOPs' });
+  }
+});
+
+// Bulk update SOPs
+router.post('/sops/bulk-update', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids, data } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    if (!data || typeof data !== 'object') {
+      return res.status(400).json({ error: 'data object is required' });
+    }
+
+    const result = await req.prisma.sOP.updateMany({
+      where: { id: { in: ids } },
+      data
+    });
+
+    res.json({ message: 'SOPs updated successfully', count: result.count });
+  } catch (error) {
+    console.error('Bulk update SOPs error:', error);
+    res.status(500).json({ error: 'Failed to bulk update SOPs' });
+  }
+});
+
 // =====================
 // Operational Checklists
 // =====================
@@ -112,22 +165,28 @@ router.delete('/sops/:id', authenticateToken, isCorporate, async (req, res) => {
 router.get('/checklists', authenticateToken, async (req, res) => {
   try {
     const { category, frequency, isActive } = req.query;
+    const { page, limit, skip, sortBy, sortOrder } = getPaginationParams(req.query);
 
     const where = {};
     if (category) where.category = category;
     if (frequency) where.frequency = frequency;
     if (isActive !== undefined) where.isActive = isActive === 'true';
 
-    const checklists = await req.prisma.operationalChecklist.findMany({
-      where,
-      include: {
-        items: { orderBy: { order: 'asc' } },
-        _count: { select: { completions: true } }
-      },
-      orderBy: { name: 'asc' }
-    });
+    const [checklists, total] = await Promise.all([
+      req.prisma.operationalChecklist.findMany({
+        where,
+        include: {
+          items: { orderBy: { order: 'asc' } },
+          _count: { select: { completions: true } }
+        },
+        skip,
+        take: limit,
+        orderBy: { [sortBy]: sortOrder }
+      }),
+      req.prisma.operationalChecklist.count({ where })
+    ]);
 
-    res.json(checklists);
+    res.json(paginatedResponse(checklists, total, page, limit));
   } catch (error) {
     console.error('Get checklists error:', error);
     res.status(500).json({ error: 'Failed to get checklists' });
@@ -304,6 +363,7 @@ router.get('/checklists/:id/completions', authenticateToken, async (req, res) =>
 router.get('/audits', authenticateToken, async (req, res) => {
   try {
     const { locationId, status, startDate, endDate } = req.query;
+    const { page, limit, skip, sortBy, sortOrder } = getPaginationParams(req.query);
 
     const where = {};
     if (locationId) where.locationId = locationId;
@@ -319,16 +379,21 @@ router.get('/audits', authenticateToken, async (req, res) => {
       where.locationId = req.user.locationId;
     }
 
-    const audits = await req.prisma.complianceAudit.findMany({
-      where,
-      include: {
-        location: { select: { id: true, name: true, code: true } },
-        checklist: { select: { id: true, name: true, category: true } }
-      },
-      orderBy: { scheduledDate: 'desc' }
-    });
+    const [audits, total] = await Promise.all([
+      req.prisma.complianceAudit.findMany({
+        where,
+        include: {
+          location: { select: { id: true, name: true, code: true } },
+          checklist: { select: { id: true, name: true, category: true } }
+        },
+        skip,
+        take: limit,
+        orderBy: { [sortBy]: sortOrder }
+      }),
+      req.prisma.complianceAudit.count({ where })
+    ]);
 
-    res.json(audits);
+    res.json(paginatedResponse(audits, total, page, limit));
   } catch (error) {
     console.error('Get audits error:', error);
     res.status(500).json({ error: 'Failed to get audits' });
@@ -432,6 +497,51 @@ router.delete('/audits/:id', authenticateToken, isCorporate, async (req, res) =>
   }
 });
 
+// Bulk delete audits
+router.post('/audits/bulk-delete', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    const result = await req.prisma.complianceAudit.deleteMany({
+      where: { id: { in: ids } }
+    });
+
+    res.json({ message: 'Audits deleted successfully', count: result.count });
+  } catch (error) {
+    console.error('Bulk delete audits error:', error);
+    res.status(500).json({ error: 'Failed to bulk delete audits' });
+  }
+});
+
+// Bulk update audits
+router.post('/audits/bulk-update', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids, data } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    if (!data || typeof data !== 'object') {
+      return res.status(400).json({ error: 'data object is required' });
+    }
+
+    const result = await req.prisma.complianceAudit.updateMany({
+      where: { id: { in: ids } },
+      data
+    });
+
+    res.json({ message: 'Audits updated successfully', count: result.count });
+  } catch (error) {
+    console.error('Bulk update audits error:', error);
+    res.status(500).json({ error: 'Failed to bulk update audits' });
+  }
+});
+
 // =====================
 // Issue Reports
 // =====================
@@ -440,6 +550,7 @@ router.delete('/audits/:id', authenticateToken, isCorporate, async (req, res) =>
 router.get('/issues', authenticateToken, async (req, res) => {
   try {
     const { locationId, category, priority, status } = req.query;
+    const { page, limit, skip, sortBy, sortOrder } = getPaginationParams(req.query);
 
     const where = {};
     if (locationId) where.locationId = locationId;
@@ -452,16 +563,21 @@ router.get('/issues', authenticateToken, async (req, res) => {
       where.locationId = req.user.locationId;
     }
 
-    const issues = await req.prisma.issueReport.findMany({
-      where,
-      include: {
-        location: { select: { id: true, name: true, code: true } },
-        reporter: { select: { id: true, firstName: true, lastName: true } }
-      },
-      orderBy: { createdAt: 'desc' }
-    });
+    const [issues, total] = await Promise.all([
+      req.prisma.issueReport.findMany({
+        where,
+        include: {
+          location: { select: { id: true, name: true, code: true } },
+          reporter: { select: { id: true, firstName: true, lastName: true } }
+        },
+        skip,
+        take: limit,
+        orderBy: { [sortBy]: sortOrder }
+      }),
+      req.prisma.issueReport.count({ where })
+    ]);
 
-    res.json(issues);
+    res.json(paginatedResponse(issues, total, page, limit));
   } catch (error) {
     console.error('Get issues error:', error);
     res.status(500).json({ error: 'Failed to get issues' });
@@ -567,6 +683,51 @@ router.delete('/issues/:id', authenticateToken, isCorporate, async (req, res) =>
   }
 });
 
+// Bulk delete issues
+router.post('/issues/bulk-delete', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    const result = await req.prisma.issueReport.deleteMany({
+      where: { id: { in: ids } }
+    });
+
+    res.json({ message: 'Issues deleted successfully', count: result.count });
+  } catch (error) {
+    console.error('Bulk delete issues error:', error);
+    res.status(500).json({ error: 'Failed to bulk delete issues' });
+  }
+});
+
+// Bulk update issues
+router.post('/issues/bulk-update', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids, data } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    if (!data || typeof data !== 'object') {
+      return res.status(400).json({ error: 'data object is required' });
+    }
+
+    const result = await req.prisma.issueReport.updateMany({
+      where: { id: { in: ids } },
+      data
+    });
+
+    res.json({ message: 'Issues updated successfully', count: result.count });
+  } catch (error) {
+    console.error('Bulk update issues error:', error);
+    res.status(500).json({ error: 'Failed to bulk update issues' });
+  }
+});
+
 // =====================
 // Best Practices
 // =====================
@@ -575,17 +736,23 @@ router.delete('/issues/:id', authenticateToken, isCorporate, async (req, res) =>
 router.get('/best-practices', authenticateToken, async (req, res) => {
   try {
     const { category, isApproved } = req.query;
+    const { page, limit, skip, sortBy, sortOrder } = getPaginationParams(req.query);
 
     const where = {};
     if (category) where.category = category;
     if (isApproved !== undefined) where.isApproved = isApproved === 'true';
 
-    const practices = await req.prisma.bestPractice.findMany({
-      where,
-      orderBy: { createdAt: 'desc' }
-    });
+    const [practices, total] = await Promise.all([
+      req.prisma.bestPractice.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { [sortBy]: sortOrder }
+      }),
+      req.prisma.bestPractice.count({ where })
+    ]);
 
-    res.json(practices);
+    res.json(paginatedResponse(practices, total, page, limit));
   } catch (error) {
     console.error('Get best practices error:', error);
     res.status(500).json({ error: 'Failed to get best practices' });
@@ -669,6 +836,51 @@ router.delete('/best-practices/:id', authenticateToken, isCorporate, async (req,
   } catch (error) {
     console.error('Delete best practice error:', error);
     res.status(500).json({ error: 'Failed to delete best practice' });
+  }
+});
+
+// Bulk delete best practices
+router.post('/best-practices/bulk-delete', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    const result = await req.prisma.bestPractice.deleteMany({
+      where: { id: { in: ids } }
+    });
+
+    res.json({ message: 'Best practices deleted successfully', count: result.count });
+  } catch (error) {
+    console.error('Bulk delete best practices error:', error);
+    res.status(500).json({ error: 'Failed to bulk delete best practices' });
+  }
+});
+
+// Bulk update best practices
+router.post('/best-practices/bulk-update', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids, data } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    if (!data || typeof data !== 'object') {
+      return res.status(400).json({ error: 'data object is required' });
+    }
+
+    const result = await req.prisma.bestPractice.updateMany({
+      where: { id: { in: ids } },
+      data
+    });
+
+    res.json({ message: 'Best practices updated successfully', count: result.count });
+  } catch (error) {
+    console.error('Bulk update best practices error:', error);
+    res.status(500).json({ error: 'Failed to bulk update best practices' });
   }
 });
 

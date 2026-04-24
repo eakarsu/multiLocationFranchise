@@ -1,13 +1,15 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { authenticateToken, isCorporate, isManager } = require('../middleware/auth');
+const { getPaginationParams, paginatedResponse } = require('../utils/pagination');
 
 const router = express.Router();
 
-// Get all locations
+// Get all locations (with pagination and sorting)
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const { status, territoryId, search } = req.query;
+    const { page, limit, skip, sortBy, sortOrder } = getPaginationParams(req.query);
 
     const where = {};
     if (status) where.status = status;
@@ -25,16 +27,21 @@ router.get('/', authenticateToken, async (req, res) => {
       where.id = req.user.locationId;
     }
 
-    const locations = await req.prisma.location.findMany({
-      where,
-      include: {
-        territory: true,
-        _count: { select: { users: true } }
-      },
-      orderBy: { name: 'asc' }
-    });
+    const [locations, total] = await Promise.all([
+      req.prisma.location.findMany({
+        where,
+        include: {
+          territory: true,
+          _count: { select: { users: true } }
+        },
+        skip,
+        take: limit,
+        orderBy: { [sortBy]: sortOrder }
+      }),
+      req.prisma.location.count({ where })
+    ]);
 
-    res.json(locations);
+    res.json(paginatedResponse(locations, total, page, limit));
   } catch (error) {
     console.error('Get locations error:', error);
     res.status(500).json({ error: 'Failed to get locations' });
@@ -133,6 +140,56 @@ router.post('/', authenticateToken, isCorporate, [
   } catch (error) {
     console.error('Create location error:', error);
     res.status(500).json({ error: 'Failed to create location' });
+  }
+});
+
+// Bulk delete locations (soft delete - set status to INACTIVE)
+router.post('/bulk-delete', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    const result = await req.prisma.location.updateMany({
+      where: { id: { in: ids } },
+      data: { status: 'INACTIVE' }
+    });
+
+    res.json({ message: `${result.count} locations deleted`, count: result.count });
+  } catch (error) {
+    console.error('Bulk delete locations error:', error);
+    res.status(500).json({ error: 'Failed to bulk delete locations' });
+  }
+});
+
+// Bulk update locations
+router.post('/bulk-update', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids, data } = req.body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    if (!data || typeof data !== 'object') {
+      return res.status(400).json({ error: 'data object is required' });
+    }
+
+    const updates = ids.map(id =>
+      req.prisma.location.update({
+        where: { id },
+        data
+      })
+    );
+
+    const results = await Promise.all(updates);
+
+    res.json({ message: `${results.length} locations updated`, count: results.length });
+  } catch (error) {
+    console.error('Bulk update locations error:', error);
+    res.status(500).json({ error: 'Failed to bulk update locations' });
   }
 });
 

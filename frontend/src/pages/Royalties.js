@@ -1,8 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { financialAPI, locationsAPI } from '../services/api';
 import { useMetadata } from '../hooks/useMetadata';
-import { FiPlus, FiEdit2, FiPercent, FiCheck, FiCalendar, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
+import { FiPlus, FiEdit2, FiPercent, FiCheck, FiCalendar, FiChevronLeft, FiChevronRight, FiTrash2, FiX } from 'react-icons/fi';
 import toast from 'react-hot-toast';
+import Pagination from '../components/Pagination';
+import SortableHeader from '../components/SortableHeader';
+import ExportButtons from '../components/ExportButtons';
+import ConfirmDialog from '../components/ConfirmDialog';
+import { PageSkeleton } from '../components/LoadingSkeleton';
 
 // Modern Month Picker Component
 const MonthPicker = ({ value, onChange, required }) => {
@@ -246,16 +251,30 @@ const Royalties = () => {
   const [editing, setEditing] = useState(null);
   const [formData, setFormData] = useState({ locationId: '', period: '', amountDue: '', amountPaid: '', status: 'PENDING' });
 
-  useEffect(() => { loadData(); }, [statusFilter]);
+  // New state for pagination, sort, bulk, confirm, detail
+  const [pagination, setPagination] = useState(null);
+  const [page, setPage] = useState(1);
+  const [sortBy, setSortBy] = useState('createdAt');
+  const [sortOrder, setSortOrder] = useState('desc');
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [confirmDialog, setConfirmDialog] = useState({ isOpen: false });
+  const [detailItem, setDetailItem] = useState(null);
+  const [showBulkUpdateModal, setShowBulkUpdateModal] = useState(false);
+  const [bulkUpdateData, setBulkUpdateData] = useState({});
+
+  useEffect(() => { loadData(); }, [statusFilter, page, sortBy, sortOrder]);
 
   const loadData = async () => {
     try {
+      setLoading(true);
       const [royRes, locRes] = await Promise.all([
-        financialAPI.getRoyalties({ status: statusFilter }),
+        financialAPI.getRoyalties({ status: statusFilter, page, limit: 15, sortBy, sortOrder }),
         locationsAPI.getAll()
       ]);
-      setItems(royRes.data);
+      setItems(royRes.data.data);
+      setPagination(royRes.data.pagination);
       setLocations(locRes.data);
+      setSelectedIds([]);
     } catch (error) { toast.error('Failed to load royalties'); }
     finally { setLoading(false); }
   };
@@ -282,6 +301,68 @@ const Royalties = () => {
     } catch (error) { toast.error('Failed'); }
   };
 
+  const handleDelete = (id) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Delete Royalty Record',
+      message: 'Are you sure you want to delete this royalty record? This action cannot be undone.',
+      variant: 'danger',
+      confirmLabel: 'Delete',
+      onConfirm: async () => {
+        try {
+          await financialAPI.deleteRoyalty(id);
+          toast.success('Deleted');
+          setConfirmDialog({ isOpen: false });
+          setDetailItem(null);
+          loadData();
+        } catch (error) { toast.error('Failed to delete'); setConfirmDialog({ isOpen: false }); }
+      },
+      onCancel: () => setConfirmDialog({ isOpen: false })
+    });
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedIds.length === 0) return;
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Delete Selected Records',
+      message: `Are you sure you want to delete ${selectedIds.length} royalty record(s)? This action cannot be undone.`,
+      variant: 'danger',
+      confirmLabel: `Delete ${selectedIds.length}`,
+      onConfirm: async () => {
+        try {
+          await financialAPI.bulkDeleteRoyalties(selectedIds);
+          toast.success(`${selectedIds.length} records deleted`);
+          setSelectedIds([]);
+          setConfirmDialog({ isOpen: false });
+          loadData();
+        } catch (error) { toast.error('Failed to delete'); setConfirmDialog({ isOpen: false }); }
+      },
+      onCancel: () => setConfirmDialog({ isOpen: false })
+    });
+  };
+
+  const handleBulkUpdate = async () => {
+    if (selectedIds.length === 0) return;
+    try {
+      await financialAPI.bulkUpdateRoyalties({ ids: selectedIds, data: bulkUpdateData });
+      toast.success(`${selectedIds.length} records updated`);
+      setSelectedIds([]);
+      setShowBulkUpdateModal(false);
+      setBulkUpdateData({});
+      loadData();
+    } catch (error) { toast.error('Failed to update'); }
+  };
+
+  const handleSort = (field) => {
+    if (sortBy === field) setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+    else { setSortBy(field); setSortOrder('asc'); }
+    setPage(1);
+  };
+
+  const toggleSelect = (id) => setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const toggleSelectAll = () => setSelectedIds(prev => prev.length === items.length ? [] : items.map(i => i.id));
+
   const statusBadge = (status) => {
     const classes = { PENDING: 'badge-warning', PAID: 'badge-success', OVERDUE: 'badge-danger', PARTIAL: 'badge-info' };
     return <span className={`badge ${classes[status]}`}>{status}</span>;
@@ -290,7 +371,15 @@ const Royalties = () => {
   const formatCurrency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(value || 0);
   const formatDate = (date) => new Date(date).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
 
-  if (loading) return <div className="loading"><div className="spinner"></div></div>;
+  const exportColumns = [
+    { label: 'Location', accessor: (d) => d.location?.name || d.locationId },
+    { label: 'Period', accessor: (d) => formatDate(d.period) },
+    { label: 'Amount Due', accessor: 'amountDue' },
+    { label: 'Amount Paid', accessor: 'amountPaid' },
+    { label: 'Status', accessor: 'status' }
+  ];
+
+  if (loading && items.length === 0) return <PageSkeleton />;
 
   const totalDue = items.reduce((sum, i) => sum + i.amountDue, 0);
   const totalPaid = items.reduce((sum, i) => sum + i.amountPaid, 0);
@@ -298,8 +387,11 @@ const Royalties = () => {
   return (
     <div>
       <div className="page-header">
-        <div><h1 className="page-title">Royalty Tracking</h1><p className="page-subtitle">{items.length} records</p></div>
-        <button className="btn btn-primary" onClick={() => { setEditing(null); setFormData({ locationId: '', period: '', amountDue: '', amountPaid: '', status: 'PENDING' }); setShowModal(true); }}><FiPlus /> Add Record</button>
+        <div><h1 className="page-title">Royalty Tracking</h1><p className="page-subtitle">{pagination?.total || items.length} records</p></div>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <ExportButtons data={items} columns={exportColumns} filename="royalties" title="Royalty Tracking Report" />
+          <button className="btn btn-primary" onClick={() => { setEditing(null); setFormData({ locationId: '', period: '', amountDue: '', amountPaid: '', status: 'PENDING' }); setShowModal(true); }}><FiPlus /> Add Record</button>
+        </div>
       </div>
 
       <div className="stats-grid">
@@ -318,24 +410,52 @@ const Royalties = () => {
       </div>
 
       <div className="filter-bar">
-        <select className="form-select" style={{ width: '150px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <select className="form-select" style={{ width: '150px' }} value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}>
           <option value="">All Statuses</option>
           {enums.paymentStatuses.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
         </select>
       </div>
 
+      {/* Bulk Action Bar */}
+      {selectedIds.length > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px',
+          background: 'var(--primary)', borderRadius: '8px', marginBottom: '12px', color: 'white'
+        }}>
+          <span style={{ fontWeight: 600 }}>{selectedIds.length} selected</span>
+          <button className="btn btn-sm btn-danger" onClick={handleBulkDelete}><FiTrash2 /> Delete Selected</button>
+          <button className="btn btn-sm btn-secondary" onClick={() => { setBulkUpdateData({}); setShowBulkUpdateModal(true); }}><FiEdit2 /> Update Status</button>
+          <button className="btn btn-sm btn-secondary" onClick={() => setSelectedIds([])} style={{ marginLeft: 'auto' }}><FiX /> Clear</button>
+        </div>
+      )}
+
       <div className="card">
         <table className="table">
-          <thead><tr><th>Location</th><th>Period</th><th>Amount Due</th><th>Amount Paid</th><th>Status</th><th>Actions</th></tr></thead>
+          <thead>
+            <tr>
+              <th style={{ width: '40px' }}>
+                <input type="checkbox" checked={items.length > 0 && selectedIds.length === items.length} onChange={toggleSelectAll} />
+              </th>
+              <SortableHeader label="Location" field="locationId" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
+              <SortableHeader label="Period" field="period" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
+              <SortableHeader label="Amount Due" field="amountDue" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
+              <SortableHeader label="Amount Paid" field="amountPaid" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
+              <SortableHeader label="Status" field="status" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
+              <th>Actions</th>
+            </tr>
+          </thead>
           <tbody>
             {items.map(item => (
-              <tr key={item.id}>
+              <tr key={item.id} onClick={() => setDetailItem(item)} style={{ cursor: 'pointer' }}>
+                <td onClick={e => e.stopPropagation()}>
+                  <input type="checkbox" checked={selectedIds.includes(item.id)} onChange={() => toggleSelect(item.id)} />
+                </td>
                 <td><div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><FiPercent style={{ color: 'var(--primary)' }} />{item.location?.name || '-'}</div></td>
                 <td><div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><FiCalendar size={14} style={{ color: 'var(--text-muted)' }} />{formatDate(item.period)}</div></td>
                 <td>{formatCurrency(item.amountDue)}</td>
                 <td>{formatCurrency(item.amountPaid)}</td>
                 <td>{statusBadge(item.status)}</td>
-                <td>
+                <td onClick={e => e.stopPropagation()}>
                   <div className="action-buttons">
                     {item.status !== 'PAID' && <button className="btn btn-sm btn-success" onClick={() => handleMarkPaid(item)}><FiCheck /> Paid</button>}
                     <button className="btn btn-sm btn-secondary" onClick={() => { setEditing(item); setFormData({ locationId: item.locationId, period: item.period.split('T')[0].substring(0, 7), amountDue: item.amountDue.toString(), amountPaid: item.amountPaid.toString(), status: item.status }); setShowModal(true); }}><FiEdit2 /></button>
@@ -345,7 +465,70 @@ const Royalties = () => {
             ))}
           </tbody>
         </table>
+        <Pagination pagination={pagination} onPageChange={setPage} />
       </div>
+
+      {/* Detail Modal */}
+      {detailItem && (
+        <div className="modal-overlay" onClick={() => setDetailItem(null)}>
+          <div className="modal" style={{ maxWidth: '550px' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">Royalty Record Details</h3>
+              <button className="modal-close" onClick={() => setDetailItem(null)}>&times;</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div><strong>Location:</strong><div>{detailItem.location?.name || '-'}</div></div>
+                <div><strong>Period:</strong><div>{formatDate(detailItem.period)}</div></div>
+                <div><strong>Amount Due:</strong><div>{formatCurrency(detailItem.amountDue)}</div></div>
+                <div><strong>Amount Paid:</strong><div>{formatCurrency(detailItem.amountPaid)}</div></div>
+                <div><strong>Status:</strong><div>{statusBadge(detailItem.status)}</div></div>
+                <div><strong>Outstanding:</strong><div style={{ color: 'var(--warning)' }}>{formatCurrency(detailItem.amountDue - detailItem.amountPaid)}</div></div>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-danger" onClick={() => handleDelete(detailItem.id)}><FiTrash2 /> Delete</button>
+              <button className="btn btn-primary" onClick={() => {
+                setEditing(detailItem);
+                setFormData({
+                  locationId: detailItem.locationId,
+                  period: detailItem.period.split('T')[0].substring(0, 7),
+                  amountDue: detailItem.amountDue.toString(),
+                  amountPaid: detailItem.amountPaid.toString(),
+                  status: detailItem.status
+                });
+                setDetailItem(null);
+                setShowModal(true);
+              }}><FiEdit2 /> Edit</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Update Modal */}
+      {showBulkUpdateModal && (
+        <div className="modal-overlay" onClick={() => setShowBulkUpdateModal(false)}>
+          <div className="modal" style={{ maxWidth: '400px' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">Bulk Update {selectedIds.length} Records</h3>
+              <button className="modal-close" onClick={() => setShowBulkUpdateModal(false)}>&times;</button>
+            </div>
+            <div className="modal-body">
+              <div className="form-group">
+                <label className="form-label">Status</label>
+                <select className="form-select" value={bulkUpdateData.status || ''} onChange={(e) => setBulkUpdateData({ ...bulkUpdateData, status: e.target.value })}>
+                  <option value="">-- No change --</option>
+                  {enums.paymentStatuses.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setShowBulkUpdateModal(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleBulkUpdate}>Update</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
@@ -368,6 +551,8 @@ const Royalties = () => {
           </div>
         </div>
       )}
+
+      <ConfirmDialog {...confirmDialog} />
     </div>
   );
 };

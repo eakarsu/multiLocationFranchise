@@ -2,10 +2,12 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import ErrorBoundary from './components/ErrorBoundary';
 
 // Components
 import Sidebar from './components/Sidebar';
 import Login from './pages/Login';
+import ForgotPassword from './pages/ForgotPassword';
 import Dashboard from './pages/Dashboard';
 import Locations from './pages/Locations';
 import LocationDetail from './pages/LocationDetail';
@@ -50,7 +52,9 @@ const ProtectedRoute = ({ children }) => {
     <div className="app-layout">
       <Sidebar />
       <main className="main-content">
-        {children}
+        <ErrorBoundary>
+          {children}
+        </ErrorBoundary>
       </main>
     </div>
   );
@@ -58,7 +62,7 @@ const ProtectedRoute = ({ children }) => {
 
 // Corporate Only Route
 const CorporateRoute = ({ children }) => {
-  const { user, isCorporate } = useAuth();
+  const { isCorporate } = useAuth();
 
   if (!isCorporate()) {
     return <Navigate to="/dashboard" replace />;
@@ -81,6 +85,7 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={user ? <Navigate to="/dashboard" replace /> : <Login />} />
+      <Route path="/forgot-password" element={user ? <Navigate to="/dashboard" replace /> : <ForgotPassword />} />
 
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
 

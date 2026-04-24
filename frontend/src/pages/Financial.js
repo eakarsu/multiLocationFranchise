@@ -1,9 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { financialAPI, locationsAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { FiPlus, FiDollarSign, FiTrendingUp, FiTrendingDown, FiCalendar, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
+import { FiPlus, FiDollarSign, FiTrendingUp, FiTrendingDown, FiCalendar, FiChevronLeft, FiChevronRight, FiTrash2, FiEdit2, FiX } from 'react-icons/fi';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 import toast from 'react-hot-toast';
+import Pagination from '../components/Pagination';
+import SortableHeader from '../components/SortableHeader';
+import ExportButtons from '../components/ExportButtons';
+import ConfirmDialog from '../components/ConfirmDialog';
+import { PageSkeleton } from '../components/LoadingSkeleton';
 
 // Modern Month Picker Component
 const MonthPicker = ({ value, onChange, required }) => {
@@ -248,18 +253,30 @@ const Financial = () => {
   const [showModal, setShowModal] = useState(false);
   const [formData, setFormData] = useState({ locationId: '', period: '', revenue: '', cogs: '', laborCost: '', operatingExpenses: '' });
 
-  useEffect(() => { loadData(); }, [locationFilter]);
+  // New state for pagination, sort, bulk, confirm, detail
+  const [pagination, setPagination] = useState(null);
+  const [page, setPage] = useState(1);
+  const [sortBy, setSortBy] = useState('createdAt');
+  const [sortOrder, setSortOrder] = useState('desc');
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [confirmDialog, setConfirmDialog] = useState({ isOpen: false });
+  const [detailItem, setDetailItem] = useState(null);
+
+  useEffect(() => { loadData(); }, [locationFilter, page, sortBy, sortOrder]);
 
   const loadData = async () => {
     try {
+      setLoading(true);
       const [finRes, locRes, statsRes] = await Promise.all([
-        financialAPI.getData({ locationId: locationFilter }),
+        financialAPI.getData({ locationId: locationFilter, page, limit: 15, sortBy, sortOrder }),
         locationsAPI.getAll(),
         financialAPI.getStats()
       ]);
-      setData(finRes.data);
+      setData(finRes.data.data);
+      setPagination(finRes.data.pagination);
       setLocations(locRes.data);
       setStats(statsRes.data);
+      setSelectedIds([]);
     } catch (error) { toast.error('Failed to load financial data'); }
     finally { setLoading(false); }
   };
@@ -283,10 +300,70 @@ const Financial = () => {
     } catch (error) { toast.error('Failed'); }
   };
 
+  const handleDelete = (id) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Delete Financial Record',
+      message: 'Are you sure you want to delete this financial record? This action cannot be undone.',
+      variant: 'danger',
+      confirmLabel: 'Delete',
+      onConfirm: async () => {
+        try {
+          await financialAPI.deleteData(id);
+          toast.success('Deleted');
+          setConfirmDialog({ isOpen: false });
+          setDetailItem(null);
+          loadData();
+        } catch (error) { toast.error('Failed to delete'); setConfirmDialog({ isOpen: false }); }
+      },
+      onCancel: () => setConfirmDialog({ isOpen: false })
+    });
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedIds.length === 0) return;
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Delete Selected Records',
+      message: `Are you sure you want to delete ${selectedIds.length} financial record(s)? This action cannot be undone.`,
+      variant: 'danger',
+      confirmLabel: `Delete ${selectedIds.length}`,
+      onConfirm: async () => {
+        try {
+          await financialAPI.bulkDeleteData(selectedIds);
+          toast.success(`${selectedIds.length} records deleted`);
+          setSelectedIds([]);
+          setConfirmDialog({ isOpen: false });
+          loadData();
+        } catch (error) { toast.error('Failed to delete'); setConfirmDialog({ isOpen: false }); }
+      },
+      onCancel: () => setConfirmDialog({ isOpen: false })
+    });
+  };
+
+  const handleSort = (field) => {
+    if (sortBy === field) setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+    else { setSortBy(field); setSortOrder('asc'); }
+    setPage(1);
+  };
+
+  const toggleSelect = (id) => setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const toggleSelectAll = () => setSelectedIds(prev => prev.length === data.length ? [] : data.map(i => i.id));
+
   const formatCurrency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(value || 0);
   const formatDate = (date) => new Date(date).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
 
-  if (loading) return <div className="loading"><div className="spinner"></div></div>;
+  const exportColumns = [
+    { label: 'Location', accessor: (d) => d.location?.name || '-' },
+    { label: 'Period', accessor: (d) => formatDate(d.period) },
+    { label: 'Revenue', accessor: 'revenue' },
+    { label: 'COGS', accessor: 'cogs' },
+    { label: 'Labor Cost', accessor: 'laborCost' },
+    { label: 'Operating Expenses', accessor: 'operatingExpenses' },
+    { label: 'Net Profit', accessor: 'netProfit' }
+  ];
+
+  if (loading && data.length === 0) return <PageSkeleton />;
 
   const chartData = data.slice(0, 12).reverse().map(d => ({
     period: formatDate(d.period),
@@ -298,7 +375,10 @@ const Financial = () => {
     <div>
       <div className="page-header">
         <div><h1 className="page-title">Financial Data</h1><p className="page-subtitle">P&L and Performance Metrics</p></div>
-        {isManager() && <button className="btn btn-primary" onClick={() => { setFormData({ locationId: user.locationId || '', period: '', revenue: '', cogs: '', laborCost: '', operatingExpenses: '' }); setShowModal(true); }}><FiPlus /> Add Data</button>}
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <ExportButtons data={data} columns={exportColumns} filename="financial-data" title="Financial Data Report" />
+          {isManager() && <button className="btn btn-primary" onClick={() => { setFormData({ locationId: user.locationId || '', period: '', revenue: '', cogs: '', laborCost: '', operatingExpenses: '' }); setShowModal(true); }}><FiPlus /> Add Data</button>}
+        </div>
       </div>
 
       {stats && (
@@ -341,18 +421,46 @@ const Financial = () => {
       )}
 
       <div className="filter-bar">
-        <select className="form-select" style={{ width: '200px' }} value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)}>
+        <select className="form-select" style={{ width: '200px' }} value={locationFilter} onChange={(e) => { setLocationFilter(e.target.value); setPage(1); }}>
           <option value="">All Locations</option>
           {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
         </select>
       </div>
 
+      {/* Bulk Action Bar */}
+      {selectedIds.length > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px',
+          background: 'var(--primary)', borderRadius: '8px', marginBottom: '12px', color: 'white'
+        }}>
+          <span style={{ fontWeight: 600 }}>{selectedIds.length} selected</span>
+          <button className="btn btn-sm btn-danger" onClick={handleBulkDelete}><FiTrash2 /> Delete Selected</button>
+          <button className="btn btn-sm btn-secondary" onClick={() => setSelectedIds([])} style={{ marginLeft: 'auto' }}><FiX /> Clear</button>
+        </div>
+      )}
+
       <div className="card">
         <table className="table">
-          <thead><tr><th>Period</th><th>Location</th><th>Revenue</th><th>COGS</th><th>Labor</th><th>Net Profit</th><th>Margin</th></tr></thead>
+          <thead>
+            <tr>
+              <th style={{ width: '40px' }}>
+                <input type="checkbox" checked={data.length > 0 && selectedIds.length === data.length} onChange={toggleSelectAll} />
+              </th>
+              <SortableHeader label="Period" field="period" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
+              <SortableHeader label="Location" field="locationId" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
+              <SortableHeader label="Revenue" field="revenue" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
+              <SortableHeader label="COGS" field="cogs" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
+              <SortableHeader label="Labor" field="laborCost" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
+              <SortableHeader label="Net Profit" field="netProfit" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
+              <th>Margin</th>
+            </tr>
+          </thead>
           <tbody>
             {data.map(d => (
-              <tr key={d.id}>
+              <tr key={d.id} onClick={() => setDetailItem(d)} style={{ cursor: 'pointer' }}>
+                <td onClick={e => e.stopPropagation()}>
+                  <input type="checkbox" checked={selectedIds.includes(d.id)} onChange={() => toggleSelect(d.id)} />
+                </td>
                 <td>{formatDate(d.period)}</td>
                 <td>{d.location?.name || '-'}</td>
                 <td>{formatCurrency(d.revenue)}</td>
@@ -364,7 +472,47 @@ const Financial = () => {
             ))}
           </tbody>
         </table>
+        <Pagination pagination={pagination} onPageChange={setPage} />
       </div>
+
+      {/* Detail Modal */}
+      {detailItem && (
+        <div className="modal-overlay" onClick={() => setDetailItem(null)}>
+          <div className="modal" style={{ maxWidth: '600px' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">Financial Record Details</h3>
+              <button className="modal-close" onClick={() => setDetailItem(null)}>&times;</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div><strong>Location:</strong><div>{detailItem.location?.name || '-'}</div></div>
+                <div><strong>Period:</strong><div>{formatDate(detailItem.period)}</div></div>
+                <div><strong>Revenue:</strong><div>{formatCurrency(detailItem.revenue)}</div></div>
+                <div><strong>COGS:</strong><div>{formatCurrency(detailItem.cogs)}</div></div>
+                <div><strong>Labor Cost:</strong><div>{formatCurrency(detailItem.laborCost)}</div></div>
+                <div><strong>Operating Expenses:</strong><div>{formatCurrency(detailItem.operatingExpenses)}</div></div>
+                <div><strong>Net Profit:</strong><div style={{ color: detailItem.netProfit >= 0 ? 'var(--secondary)' : 'var(--danger)' }}>{formatCurrency(detailItem.netProfit)}</div></div>
+                <div><strong>Margin:</strong><div><span className={`badge ${(detailItem.netProfit/detailItem.revenue) > 0.15 ? 'badge-success' : 'badge-warning'}`}>{((detailItem.netProfit/detailItem.revenue)*100).toFixed(1)}%</span></div></div>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-danger" onClick={() => handleDelete(detailItem.id)}><FiTrash2 /> Delete</button>
+              <button className="btn btn-primary" onClick={() => {
+                setFormData({
+                  locationId: detailItem.locationId,
+                  period: detailItem.period?.split('T')[0]?.substring(0, 7) || '',
+                  revenue: detailItem.revenue?.toString() || '',
+                  cogs: detailItem.cogs?.toString() || '',
+                  laborCost: detailItem.laborCost?.toString() || '',
+                  operatingExpenses: detailItem.operatingExpenses?.toString() || ''
+                });
+                setDetailItem(null);
+                setShowModal(true);
+              }}><FiEdit2 /> Edit</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
@@ -397,6 +545,8 @@ const Financial = () => {
           </div>
         </div>
       )}
+
+      <ConfirmDialog {...confirmDialog} />
     </div>
   );
 };

@@ -2,13 +2,15 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const { body, validationResult } = require('express-validator');
 const { authenticateToken, isCorporate } = require('../middleware/auth');
+const { getPaginationParams, paginatedResponse } = require('../utils/pagination');
 
 const router = express.Router();
 
-// Get all users (corporate only)
+// Get all users (corporate only, with pagination and sorting)
 router.get('/', authenticateToken, isCorporate, async (req, res) => {
   try {
     const { role, locationId, isActive, search } = req.query;
+    const { page, limit, skip, sortBy, sortOrder } = getPaginationParams(req.query);
 
     const where = {};
     if (role) where.role = role;
@@ -22,24 +24,29 @@ router.get('/', authenticateToken, isCorporate, async (req, res) => {
       ];
     }
 
-    const users = await req.prisma.user.findMany({
-      where,
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        role: true,
-        phone: true,
-        isActive: true,
-        locationId: true,
-        location: { select: { id: true, name: true, code: true } },
-        createdAt: true
-      },
-      orderBy: { createdAt: 'desc' }
-    });
+    const [users, total] = await Promise.all([
+      req.prisma.user.findMany({
+        where,
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          role: true,
+          phone: true,
+          isActive: true,
+          locationId: true,
+          location: { select: { id: true, name: true, code: true } },
+          createdAt: true
+        },
+        skip,
+        take: limit,
+        orderBy: { [sortBy]: sortOrder }
+      }),
+      req.prisma.user.count({ where })
+    ]);
 
-    res.json(users);
+    res.json(paginatedResponse(users, total, page, limit));
   } catch (error) {
     console.error('Get users error:', error);
     res.status(500).json({ error: 'Failed to get users' });
@@ -127,6 +134,56 @@ router.post('/', authenticateToken, isCorporate, [
   } catch (error) {
     console.error('Create user error:', error);
     res.status(500).json({ error: 'Failed to create user' });
+  }
+});
+
+// Bulk delete users (soft delete - deactivate)
+router.post('/bulk-delete', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    const result = await req.prisma.user.updateMany({
+      where: { id: { in: ids } },
+      data: { isActive: false }
+    });
+
+    res.json({ message: `${result.count} users deactivated`, count: result.count });
+  } catch (error) {
+    console.error('Bulk delete users error:', error);
+    res.status(500).json({ error: 'Failed to bulk delete users' });
+  }
+});
+
+// Bulk update users
+router.post('/bulk-update', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids, data } = req.body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    if (!data || typeof data !== 'object') {
+      return res.status(400).json({ error: 'data object is required' });
+    }
+
+    const updates = ids.map(id =>
+      req.prisma.user.update({
+        where: { id },
+        data
+      })
+    );
+
+    const results = await Promise.all(updates);
+
+    res.json({ message: `${results.length} users updated`, count: results.length });
+  } catch (error) {
+    console.error('Bulk update users error:', error);
+    res.status(500).json({ error: 'Failed to bulk update users' });
   }
 });
 

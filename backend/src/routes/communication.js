@@ -1,6 +1,7 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { authenticateToken, isCorporate } = require('../middleware/auth');
+const { getPaginationParams, paginatedResponse } = require('../utils/pagination');
 
 const router = express.Router();
 
@@ -12,6 +13,7 @@ const router = express.Router();
 router.get('/announcements', authenticateToken, async (req, res) => {
   try {
     const { isPublished, priority } = req.query;
+    const { page, limit, skip, sortBy, sortOrder } = getPaginationParams(req.query);
 
     const where = {};
     if (isPublished !== undefined) where.isPublished = isPublished === 'true';
@@ -26,15 +28,20 @@ router.get('/announcements', authenticateToken, async (req, res) => {
       where.expiresAt = { OR: [{ equals: null }, { gt: new Date() }] };
     }
 
-    const announcements = await req.prisma.announcement.findMany({
-      where,
-      include: {
-        author: { select: { id: true, firstName: true, lastName: true } }
-      },
-      orderBy: [{ priority: 'desc' }, { publishedAt: 'desc' }]
-    });
+    const [announcements, total] = await Promise.all([
+      req.prisma.announcement.findMany({
+        where,
+        include: {
+          author: { select: { id: true, firstName: true, lastName: true } }
+        },
+        skip,
+        take: limit,
+        orderBy: { [sortBy]: sortOrder }
+      }),
+      req.prisma.announcement.count({ where })
+    ]);
 
-    res.json(announcements);
+    res.json(paginatedResponse(announcements, total, page, limit));
   } catch (error) {
     console.error('Get announcements error:', error);
     res.status(500).json({ error: 'Failed to get announcements' });
@@ -147,6 +154,51 @@ router.delete('/announcements/:id', authenticateToken, isCorporate, async (req, 
   } catch (error) {
     console.error('Delete announcement error:', error);
     res.status(500).json({ error: 'Failed to delete announcement' });
+  }
+});
+
+// Bulk delete announcements
+router.post('/announcements/bulk-delete', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    const result = await req.prisma.announcement.deleteMany({
+      where: { id: { in: ids } }
+    });
+
+    res.json({ message: 'Announcements deleted successfully', count: result.count });
+  } catch (error) {
+    console.error('Bulk delete announcements error:', error);
+    res.status(500).json({ error: 'Failed to bulk delete announcements' });
+  }
+});
+
+// Bulk update announcements
+router.post('/announcements/bulk-update', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids, data } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    if (!data || typeof data !== 'object') {
+      return res.status(400).json({ error: 'data object is required' });
+    }
+
+    const result = await req.prisma.announcement.updateMany({
+      where: { id: { in: ids } },
+      data
+    });
+
+    res.json({ message: 'Announcements updated successfully', count: result.count });
+  } catch (error) {
+    console.error('Bulk update announcements error:', error);
+    res.status(500).json({ error: 'Failed to bulk update announcements' });
   }
 });
 
@@ -329,6 +381,7 @@ router.get('/messages/count/unread', authenticateToken, async (req, res) => {
 router.get('/knowledge', authenticateToken, async (req, res) => {
   try {
     const { category, search, isPublished } = req.query;
+    const { page, limit, skip, sortBy, sortOrder } = getPaginationParams(req.query);
 
     const where = {};
     if (category) where.category = category;
@@ -341,15 +394,20 @@ router.get('/knowledge', authenticateToken, async (req, res) => {
       ];
     }
 
-    const articles = await req.prisma.knowledgeArticle.findMany({
-      where,
-      include: {
-        author: { select: { id: true, firstName: true, lastName: true } }
-      },
-      orderBy: { updatedAt: 'desc' }
-    });
+    const [articles, total] = await Promise.all([
+      req.prisma.knowledgeArticle.findMany({
+        where,
+        include: {
+          author: { select: { id: true, firstName: true, lastName: true } }
+        },
+        skip,
+        take: limit,
+        orderBy: { [sortBy]: sortOrder }
+      }),
+      req.prisma.knowledgeArticle.count({ where })
+    ]);
 
-    res.json(articles);
+    res.json(paginatedResponse(articles, total, page, limit));
   } catch (error) {
     console.error('Get articles error:', error);
     res.status(500).json({ error: 'Failed to get articles' });
@@ -456,6 +514,51 @@ router.delete('/knowledge/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// Bulk delete knowledge articles
+router.post('/knowledge/bulk-delete', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    const result = await req.prisma.knowledgeArticle.deleteMany({
+      where: { id: { in: ids } }
+    });
+
+    res.json({ message: 'Knowledge articles deleted successfully', count: result.count });
+  } catch (error) {
+    console.error('Bulk delete knowledge articles error:', error);
+    res.status(500).json({ error: 'Failed to bulk delete knowledge articles' });
+  }
+});
+
+// Bulk update knowledge articles
+router.post('/knowledge/bulk-update', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids, data } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    if (!data || typeof data !== 'object') {
+      return res.status(400).json({ error: 'data object is required' });
+    }
+
+    const result = await req.prisma.knowledgeArticle.updateMany({
+      where: { id: { in: ids } },
+      data
+    });
+
+    res.json({ message: 'Knowledge articles updated successfully', count: result.count });
+  } catch (error) {
+    console.error('Bulk update knowledge articles error:', error);
+    res.status(500).json({ error: 'Failed to bulk update knowledge articles' });
+  }
+});
+
 // =====================
 // Support Tickets
 // =====================
@@ -464,6 +567,7 @@ router.delete('/knowledge/:id', authenticateToken, async (req, res) => {
 router.get('/tickets', authenticateToken, async (req, res) => {
   try {
     const { status, priority, category } = req.query;
+    const { page, limit, skip, sortBy, sortOrder } = getPaginationParams(req.query);
 
     const where = {};
     if (status) where.status = status;
@@ -475,15 +579,20 @@ router.get('/tickets', authenticateToken, async (req, res) => {
       where.submitterId = req.user.id;
     }
 
-    const tickets = await req.prisma.supportTicket.findMany({
-      where,
-      include: {
-        submitter: { select: { id: true, firstName: true, lastName: true, email: true } }
-      },
-      orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }]
-    });
+    const [tickets, total] = await Promise.all([
+      req.prisma.supportTicket.findMany({
+        where,
+        include: {
+          submitter: { select: { id: true, firstName: true, lastName: true, email: true } }
+        },
+        skip,
+        take: limit,
+        orderBy: { [sortBy]: sortOrder }
+      }),
+      req.prisma.supportTicket.count({ where })
+    ]);
 
-    res.json(tickets);
+    res.json(paginatedResponse(tickets, total, page, limit));
   } catch (error) {
     console.error('Get tickets error:', error);
     res.status(500).json({ error: 'Failed to get tickets' });
@@ -592,6 +701,51 @@ router.delete('/tickets/:id', authenticateToken, isCorporate, async (req, res) =
   } catch (error) {
     console.error('Delete ticket error:', error);
     res.status(500).json({ error: 'Failed to delete ticket' });
+  }
+});
+
+// Bulk delete tickets
+router.post('/tickets/bulk-delete', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    const result = await req.prisma.supportTicket.deleteMany({
+      where: { id: { in: ids } }
+    });
+
+    res.json({ message: 'Tickets deleted successfully', count: result.count });
+  } catch (error) {
+    console.error('Bulk delete tickets error:', error);
+    res.status(500).json({ error: 'Failed to bulk delete tickets' });
+  }
+});
+
+// Bulk update tickets
+router.post('/tickets/bulk-update', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { ids, data } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    if (!data || typeof data !== 'object') {
+      return res.status(400).json({ error: 'data object is required' });
+    }
+
+    const result = await req.prisma.supportTicket.updateMany({
+      where: { id: { in: ids } },
+      data
+    });
+
+    res.json({ message: 'Tickets updated successfully', count: result.count });
+  } catch (error) {
+    console.error('Bulk update tickets error:', error);
+    res.status(500).json({ error: 'Failed to bulk update tickets' });
   }
 });
 
