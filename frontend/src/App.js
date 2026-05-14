@@ -30,6 +30,7 @@ import Messages from './pages/Messages';
 import KnowledgeBase from './pages/KnowledgeBase';
 import SupportTickets from './pages/SupportTickets';
 import AITools from './pages/AITools';
+import AIAdvisors from './pages/AIAdvisors';
 import Profile from './pages/Profile';
 
 // Protected Route Wrapper
@@ -175,6 +176,10 @@ function AppRoutes() {
 
       <Route path="/ai" element={
         <ProtectedRoute><AITools /></ProtectedRoute>
+      } />
+
+      <Route path="/ai/advisors" element={
+        <ProtectedRoute><AIAdvisors /></ProtectedRoute>
       } />
 
       <Route path="/profile" element={

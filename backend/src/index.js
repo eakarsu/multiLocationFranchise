@@ -72,6 +72,7 @@ app.use('/api/communication', communicationRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/metadata', metadataRoutes);
+app.use('/api/brand-compliance-vision', require('./routes/brandComplianceVision')); app.use('/api/franchisee-lms', require('./routes/franchiseeLms')); app.use('/api/vendor-marketplace', require('./routes/vendorMarketplace')); app.use('/api/multi-currency-royalty', require('./routes/multiCurrencyRoyalty')); app.use('/api/mobile-briefing', require('./routes/mobileBriefing')); app.use('/api/marketing-attribution', require('./routes/marketingAttribution'));
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -95,3 +96,17 @@ process.on('SIGINT', async () => {
   await prisma.$disconnect();
   process.exit(0);
 });
+
+// === Batch 10 Gaps & Frontend Mounts === (mounts)
+app.use('/api/gap-strong-coverage-already-16-ai-endpoints', require('./routes/gap_strong_coverage_already_16_ai_endpoints'));
+app.use('/api/gap-no-vision-based-brand-compliance-audit', require('./routes/gap_no_vision_based_brand_compliance_audit'));
+app.use('/api/gap-no-franchisee-sentiment-glassdoor-style-analysis', require('./routes/gap_no_franchisee_sentiment_glassdoor_style_analysis'));
+app.use('/api/gap-no-supply-chain-optimization-across-locations', require('./routes/gap_no_supply_chain_optimization_across_locations'));
+app.use('/api/gap-no-marketing-spend-attribution-ai', require('./routes/gap_no_marketing_spend_attribution_ai'));
+app.use('/api/gap-no-real-time-pos-kpi-ingestion', require('./routes/gap_no_real_time_pos_kpi_ingestion'));
+app.use('/api/gap-no-payments-royalty-collection-automation', require('./routes/gap_no_payments_royalty_collection_automation'));
+app.use('/api/gap-no-multi-currency-multi-region-accounting', require('./routes/gap_no_multi_currency_multi_region_accounting'));
+app.use('/api/gap-no-franchisee-certification-training-lms-backend', require('./routes/gap_no_franchisee_certification_training_lms_backend'));
+app.use('/api/gap-no-vendor-supplier-marketplace', require('./routes/gap_no_vendor_supplier_marketplace'));
+app.use('/api/gap-no-support-ticketing-system', require('./routes/gap_no_support_ticketing_system'));
+app.use('/api/gap-no-mobile-app-for-franchisees', require('./routes/gap_no_mobile_app_for_franchisees'));

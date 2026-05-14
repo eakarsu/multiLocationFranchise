@@ -76,7 +76,8 @@ const Sidebar = () => {
     {
       title: 'AI Tools',
       items: [
-        { path: '/ai', icon: FiCpu, label: 'AI Assistant' }
+        { path: '/ai', icon: FiCpu, label: 'AI Assistant' },
+        { path: '/ai/advisors', icon: FiCpu, label: 'AI Advisors' }
       ]
     }
   ];

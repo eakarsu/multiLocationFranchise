@@ -1,0 +1,24 @@
+{
+  "marker": "// === Batch 10 Gaps & Frontend Mounts ===",
+  "project": "multiLocationFranchise",
+  "items": [
+    "<Route path=\"/batch10/cf-vision-based-brand-compliance-audit-mystery\" element={<CfVisionBasedBrandComplianceAuditMystery />} />",
+    "<Route path=\"/batch10/cf-franchisee-certification-lms-with-ai-proctoring\" element={<CfFranchiseeCertificationLmsWithAiProctoring />} />",
+    "<Route path=\"/batch10/cf-vendor-marketplace-with-bulk-discount-negotiation\" element={<CfVendorMarketplaceWithBulkDiscountNegotiation />} />",
+    "<Route path=\"/batch10/cf-multi-currency-royalty-automation-with-fx\" element={<CfMultiCurrencyRoyaltyAutomationWithFx />} />",
+    "<Route path=\"/batch10/cf-mobile-app-for-franchisees-with-daily\" element={<CfMobileAppForFranchiseesWithDaily />} />",
+    "<Route path=\"/batch10/cf-marketing-spend-attribution-across-locations-and\" element={<CfMarketingSpendAttributionAcrossLocationsAnd />} />",
+    "<Route path=\"/batch10/gap-strong-coverage-already-16-ai-endpoints\" element={<GapStrongCoverageAlready16AiEndpoints />} />",
+    "<Route path=\"/batch10/gap-no-vision-based-brand-compliance-audit\" element={<GapNoVisionBasedBrandComplianceAudit />} />",
+    "<Route path=\"/batch10/gap-no-franchisee-sentiment-glassdoor-style-analysis\" element={<GapNoFranchiseeSentimentGlassdoorStyleAnalysis />} />",
+    "<Route path=\"/batch10/gap-no-supply-chain-optimization-across-locations\" element={<GapNoSupplyChainOptimizationAcrossLocations />} />",
+    "<Route path=\"/batch10/gap-no-marketing-spend-attribution-ai\" element={<GapNoMarketingSpendAttributionAi />} />",
+    "<Route path=\"/batch10/gap-no-real-time-pos-kpi-ingestion\" element={<GapNoRealTimePosKpiIngestion />} />",
+    "<Route path=\"/batch10/gap-no-payments-royalty-collection-automation\" element={<GapNoPaymentsRoyaltyCollectionAutomation />} />",
+    "<Route path=\"/batch10/gap-no-multi-currency-multi-region-accounting\" element={<GapNoMultiCurrencyMultiRegionAccounting />} />",
+    "<Route path=\"/batch10/gap-no-franchisee-certification-training-lms-backend\" element={<GapNoFranchiseeCertificationTrainingLmsBackend />} />",
+    "<Route path=\"/batch10/gap-no-vendor-supplier-marketplace\" element={<GapNoVendorSupplierMarketplace />} />",
+    "<Route path=\"/batch10/gap-no-support-ticketing-system\" element={<GapNoSupportTicketingSystem />} />",
+    "<Route path=\"/batch10/gap-no-mobile-app-for-franchisees\" element={<GapNoMobileAppForFranchisees />} />"
+  ]
+}
