@@ -231,13 +231,58 @@ const generateAIAnalysis = async (type, data, context = {}) => {
 
       Provide a JSON response with: summary, anomalies (array with type, location, description, severity, recommendation), and systemHealth.`,
 
+    CHURN_PREDICTION: `Predict franchisee churn risk for a multi-location franchise network:
+      - Locations evaluated: ${data.locationCount || 0}
+      - Avg compliance score: ${data.avgComplianceScore || 'unknown'}
+      - Avg performance trend (recent): ${data.recentTrend || 'unknown'}
+
+      Provide a JSON response with: summary, atRiskLocations (array with locationId, code, churnScore (0-1), drivers, retentionActions), networkLevelRecommendations (array).`,
+
+    ROYALTY_FORECAST: `Forecast franchise royalty/revenue for the network:
+      - Locations: ${data.locationCount || 0}
+      - Forecast horizon (months): ${data.horizonMonths || 6}
+      - Avg monthly royalty (recent): $${data.avgRoyalty || 0}
+
+      Provide a JSON response with: summary, monthlyForecast (array with month, expectedRoyalty, low, high, confidence), drivers (array), risks (array), recommendations (array).`,
+
+    KPI_DASHBOARD_SUMMARY: `Generate an executive KPI dashboard narrative for a franchise network:
+      - Locations: ${data.locationCount || 0}
+      - Period: ${data.period || 'last 30 days'}
+      - Aggregate metrics: ${JSON.stringify(data.aggregates || {})}
+
+      Provide a JSON response with: summary, headlineMetrics (array with name, value, trend), watchList (array of locations needing attention), wins (array), recommendedActions (array).`,
+
     REPORT_GENERATION: `Generate a comprehensive franchise report:
       - Total revenue: $${data.totalRevenue || 0}
       - Average location revenue: $${data.avgRevenue || 0}
       - Compliance rate: ${data.complianceRate || 0}%
       - Customer satisfaction: ${data.satisfaction || 0}%
 
-      Provide a JSON response with: summary, sections (array with title and status), keyMetrics, insights (array), and recommendations (array).`
+      Provide a JSON response with: summary, sections (array with title and status), keyMetrics, insights (array), and recommendations (array).`,
+
+    TERRITORIAL_DISPUTE_RESOLUTION: `Mediate a territorial dispute in a franchise network:
+      - Territory: ${data.territoryName || 'unknown'} (${data.territoryRegion || ''})
+      - Locations involved: ${data.locationCount || 0}
+      - Dispute description: ${data.disputeDescription || 'overlap / encroachment'}
+      - Context: ${JSON.stringify(context)}
+
+      Provide a JSON response with: summary, rootCauses (array), proposedResolution (string), boundaryRecommendations (array of {locationId, suggestedAction}), compensationOptions (array), nextSteps (array of 3+ items).`,
+
+    ONBOARDING_CHECKLIST: `Generate a franchisee onboarding/certification checklist:
+      - New franchisee: ${data.franchiseeName || 'TBD'}
+      - Target location: ${data.locationName || 'TBD'}
+      - Concept type: ${data.conceptType || 'standard'}
+      - Weeks until opening: ${data.weeksUntilOpen || 8}
+
+      Provide a JSON response with: summary, phases (array of {phase, weekRange, tasks: [{task, owner, dueOffsetDays, criticality}]}), certifications (array of {name, requiredBy, status}), risks (array), recommendations (array).`,
+
+    WHITE_LABEL_ANALYTICS_SUMMARY: `Produce a white-label analytics narrative suitable for franchisee-facing dashboards:
+      - Locations: ${data.locationCount || 0}
+      - Brand: ${data.brandName || 'the brand'}
+      - Period: ${data.period || 'last 30 days'}
+      - Aggregate metrics: ${JSON.stringify(data.aggregates || {})}
+
+      Provide a JSON response with: summary (brand-neutral, plain-English), highlights (array of {title, value, change}), benchmarkInsights (array), franchiseeCallouts (array of {audience, message}), recommendedActions (array).`
   };
 
   const systemPrompt = `You are an AI analyst for a multi-location franchise management platform.
@@ -639,6 +684,252 @@ router.post('/anomaly-detection', authenticateToken, isCorporate, async (req, re
   } catch (error) {
     console.error('Anomaly detection error:', error);
     res.status(500).json({ error: 'Failed to detect anomalies' });
+  }
+});
+
+// Predict franchisee churn risk
+router.post('/churn-prediction', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const locations = await req.prisma.location.findMany({
+      include: {
+        _count: { select: { complianceAudits: true, performanceData: true } }
+      }
+    });
+
+    const compliance = await req.prisma.complianceAudit.findMany({
+      orderBy: { completedDate: 'desc' },
+      take: 200
+    });
+    const avgComplianceScore = compliance.length
+      ? Math.round(compliance.reduce((s, a) => s + (a.score || 0), 0) / compliance.length)
+      : null;
+
+    const analysis = await generateAIAnalysis('CHURN_PREDICTION', {
+      locationCount: locations.length,
+      avgComplianceScore,
+      recentTrend: 'mixed'
+    });
+
+    await req.prisma.aIAnalysis.create({
+      data: {
+        type: 'CHURN_PREDICTION',
+        input: { locationCount: locations.length, avgComplianceScore },
+        output: analysis
+      }
+    });
+
+    res.json(analysis);
+  } catch (error) {
+    console.error('Churn prediction error:', error);
+    res.status(500).json({ error: 'Failed to predict churn' });
+  }
+});
+
+// Royalty/revenue forecasting for the franchise network
+router.post('/royalty-forecast', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    const { horizonMonths } = req.body;
+    const locations = await req.prisma.location.findMany();
+    const recentFinancial = await req.prisma.financialData.findMany({
+      orderBy: { period: 'desc' },
+      take: 200
+    });
+    const avgRoyalty = recentFinancial.length
+      ? Math.round(
+          recentFinancial.reduce((s, f) => s + (Number(f.royaltyAmount) || Number(f.revenue) || 0), 0) /
+            recentFinancial.length
+        )
+      : 0;
+
+    const analysis = await generateAIAnalysis('ROYALTY_FORECAST', {
+      locationCount: locations.length,
+      horizonMonths: horizonMonths || 6,
+      avgRoyalty
+    });
+
+    await req.prisma.aIAnalysis.create({
+      data: {
+        type: 'ROYALTY_FORECAST',
+        input: { locationCount: locations.length, horizonMonths: horizonMonths || 6 },
+        output: analysis
+      }
+    });
+
+    res.json(analysis);
+  } catch (error) {
+    console.error('Royalty forecast error:', error);
+    res.status(500).json({ error: 'Failed to forecast royalties' });
+  }
+});
+
+// Real-time KPI dashboard narrative summary
+router.post('/kpi-dashboard-summary', authenticateToken, async (req, res) => {
+  try {
+    const { period } = req.body;
+    const locations = await req.prisma.location.findMany();
+
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 30);
+
+    const recentFinancial = await req.prisma.financialData.findMany({
+      where: { period: { gte: startDate } }
+    });
+    const recentPerformance = await req.prisma.performanceData.findMany({
+      where: { date: { gte: startDate } }
+    });
+
+    const aggregates = {
+      financialRecords: recentFinancial.length,
+      performanceRecords: recentPerformance.length,
+      revenueSum: recentFinancial.reduce((s, f) => s + (Number(f.revenue) || 0), 0)
+    };
+
+    const analysis = await generateAIAnalysis('KPI_DASHBOARD_SUMMARY', {
+      locationCount: locations.length,
+      period: period || 'last 30 days',
+      aggregates
+    });
+
+    await req.prisma.aIAnalysis.create({
+      data: {
+        type: 'KPI_DASHBOARD_SUMMARY',
+        input: { period: period || 'last 30 days', locationCount: locations.length },
+        output: analysis
+      }
+    });
+
+    res.json(analysis);
+  } catch (error) {
+    console.error('KPI dashboard summary error:', error);
+    res.status(500).json({ error: 'Failed to generate KPI summary' });
+  }
+});
+
+// Helper: detect missing OpenRouter key for 503 response
+const aiKeyMissing = () => {
+  const k = process.env.OPENROUTER_API_KEY;
+  return !k || k === 'your_openrouter_api_key_here' || k === 'your-openrouter-api-key-here';
+};
+
+// Territorial dispute resolution AI
+router.post('/territorial-dispute-resolution', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    if (aiKeyMissing()) {
+      return res.status(503).json({ error: 'AI service unavailable: OPENROUTER_API_KEY not configured.' });
+    }
+    const { territoryId, disputeDescription } = req.body || {};
+    let territoryName = null;
+    let territoryRegion = null;
+    let locations = [];
+    if (territoryId) {
+      const territory = await req.prisma.territory.findUnique({ where: { id: territoryId } });
+      if (territory) {
+        territoryName = territory.name;
+        territoryRegion = territory.region;
+      }
+      locations = await req.prisma.location.findMany({ where: { territoryId } });
+    } else {
+      locations = await req.prisma.location.findMany({ take: 20 });
+    }
+
+    const analysis = await generateAIAnalysis('TERRITORIAL_DISPUTE_RESOLUTION', {
+      territoryName,
+      territoryRegion,
+      locationCount: locations.length,
+      disputeDescription: disputeDescription || 'territorial overlap / encroachment'
+    }, { locationIds: locations.map((l) => l.id) });
+
+    await req.prisma.aIAnalysis.create({
+      data: {
+        type: 'TERRITORIAL_DISPUTE_RESOLUTION',
+        input: { territoryId: territoryId || null, disputeDescription: disputeDescription || null, locationCount: locations.length },
+        output: analysis
+      }
+    });
+
+    res.json(analysis);
+  } catch (error) {
+    console.error('Territorial dispute resolution error:', error);
+    res.status(500).json({ error: 'Failed to generate territorial dispute resolution' });
+  }
+});
+
+// Franchisee onboarding/certification checklist generator
+router.post('/onboarding-checklist', authenticateToken, isCorporate, async (req, res) => {
+  try {
+    if (aiKeyMissing()) {
+      return res.status(503).json({ error: 'AI service unavailable: OPENROUTER_API_KEY not configured.' });
+    }
+    const { franchiseeName, locationId, conceptType, weeksUntilOpen } = req.body || {};
+    let locationName = null;
+    if (locationId) {
+      const loc = await req.prisma.location.findUnique({ where: { id: locationId } });
+      if (loc) locationName = loc.name;
+    }
+
+    const analysis = await generateAIAnalysis('ONBOARDING_CHECKLIST', {
+      franchiseeName: franchiseeName || 'New Franchisee',
+      locationName,
+      conceptType: conceptType || 'standard',
+      weeksUntilOpen: Number(weeksUntilOpen) || 8
+    });
+
+    await req.prisma.aIAnalysis.create({
+      data: {
+        type: 'ONBOARDING_CHECKLIST',
+        input: { franchiseeName: franchiseeName || null, locationId: locationId || null, conceptType: conceptType || null, weeksUntilOpen: Number(weeksUntilOpen) || 8 },
+        output: analysis
+      }
+    });
+
+    res.json(analysis);
+  } catch (error) {
+    console.error('Onboarding checklist error:', error);
+    res.status(500).json({ error: 'Failed to generate onboarding checklist' });
+  }
+});
+
+// White-label analytics summary (brand-neutral narrative for franchisee dashboards)
+router.post('/white-label-analytics-summary', authenticateToken, async (req, res) => {
+  try {
+    if (aiKeyMissing()) {
+      return res.status(503).json({ error: 'AI service unavailable: OPENROUTER_API_KEY not configured.' });
+    }
+    const { brandName, period } = req.body || {};
+    const locations = await req.prisma.location.findMany();
+
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 30);
+    const recentFinancial = await req.prisma.financialData.findMany({
+      where: { period: { gte: startDate } }
+    });
+    const aggregates = {
+      financialRecords: recentFinancial.length,
+      revenueSum: recentFinancial.reduce((s, f) => s + (Number(f.revenue) || 0), 0),
+      avgRevenue: recentFinancial.length
+        ? Math.round(recentFinancial.reduce((s, f) => s + (Number(f.revenue) || 0), 0) / recentFinancial.length)
+        : 0
+    };
+
+    const analysis = await generateAIAnalysis('WHITE_LABEL_ANALYTICS_SUMMARY', {
+      locationCount: locations.length,
+      brandName: brandName || 'the brand',
+      period: period || 'last 30 days',
+      aggregates
+    });
+
+    await req.prisma.aIAnalysis.create({
+      data: {
+        type: 'WHITE_LABEL_ANALYTICS_SUMMARY',
+        input: { brandName: brandName || null, period: period || 'last 30 days', locationCount: locations.length },
+        output: analysis
+      }
+    });
+
+    res.json(analysis);
+  } catch (error) {
+    console.error('White-label analytics summary error:', error);
+    res.status(500).json({ error: 'Failed to generate white-label analytics summary' });
   }
 });
 
