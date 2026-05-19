@@ -32,6 +32,7 @@ import SupportTickets from './pages/SupportTickets';
 import AITools from './pages/AITools';
 import AIAdvisors from './pages/AIAdvisors';
 import Profile from './pages/Profile';
+import CustomViewsPage from './pages/CustomViewsPage';
 
 // Protected Route Wrapper
 const ProtectedRoute = ({ children }) => {
@@ -184,6 +185,10 @@ function AppRoutes() {
 
       <Route path="/profile" element={
         <ProtectedRoute><Profile /></ProtectedRoute>
+      } />
+
+      <Route path="/custom-views" element={
+        <ProtectedRoute><CustomViewsPage /></ProtectedRoute>
       } />
 
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

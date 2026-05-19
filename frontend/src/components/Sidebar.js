@@ -6,7 +6,7 @@ import {
   FiBook, FiImage, FiTruck, FiAward, FiFileText,
   FiCheckSquare, FiClipboard, FiAlertCircle, FiStar,
   FiDollarSign, FiPercent, FiBell, FiMail, FiHelpCircle,
-  FiMessageSquare, FiCpu, FiSettings, FiLogOut
+  FiMessageSquare, FiCpu, FiSettings, FiLogOut, FiEye
 } from 'react-icons/fi';
 
 const Sidebar = () => {
@@ -78,6 +78,12 @@ const Sidebar = () => {
       items: [
         { path: '/ai', icon: FiCpu, label: 'AI Assistant' },
         { path: '/ai/advisors', icon: FiCpu, label: 'AI Advisors' }
+      ]
+    },
+    {
+      title: 'Custom Views',
+      items: [
+        { path: '/custom-views', icon: FiEye, label: 'Franchise Views' }
       ]
     }
   ];

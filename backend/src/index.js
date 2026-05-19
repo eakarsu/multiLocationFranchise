@@ -74,6 +74,9 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/metadata', metadataRoutes);
 app.use('/api/brand-compliance-vision', require('./routes/brandComplianceVision')); app.use('/api/franchisee-lms', require('./routes/franchiseeLms')); app.use('/api/vendor-marketplace', require('./routes/vendorMarketplace')); app.use('/api/multi-currency-royalty', require('./routes/multiCurrencyRoyalty')); app.use('/api/mobile-briefing', require('./routes/mobileBriefing')); app.use('/api/marketing-attribution', require('./routes/marketingAttribution'));
 
+// Custom Views (4 endpoints — mounted before health/error handlers)
+app.use('/api/custom-views', require('./routes/customViews'));
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
