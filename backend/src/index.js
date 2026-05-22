@@ -76,6 +76,7 @@ app.use('/api/brand-compliance-vision', require('./routes/brandComplianceVision'
 
 // Custom Views (4 endpoints — mounted before health/error handlers)
 app.use('/api/custom-views', require('./routes/customViews'));
+app.use('/api/store-opening-readiness', require('./routes/storeOpeningReadiness'));
 
 // Health check
 app.get('/api/health', (req, res) => {

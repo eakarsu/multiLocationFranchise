@@ -6,7 +6,7 @@ import {
   FiBook, FiImage, FiTruck, FiAward, FiFileText,
   FiCheckSquare, FiClipboard, FiAlertCircle, FiStar,
   FiDollarSign, FiPercent, FiBell, FiMail, FiHelpCircle,
-  FiMessageSquare, FiCpu, FiSettings, FiLogOut, FiEye
+  FiMessageSquare, FiCpu, FiSettings, FiLogOut, FiEye, FiFlag
 } from 'react-icons/fi';
 
 const Sidebar = () => {
@@ -29,6 +29,7 @@ const Sidebar = () => {
       title: 'Location Management',
       items: [
         { path: '/locations', icon: FiMapPin, label: 'Locations' },
+        { path: '/store-opening-readiness', icon: FiFlag, label: 'Opening Readiness' },
         ...(isCorporate() ? [
           { path: '/users', icon: FiUsers, label: 'Users' },
           { path: '/territories', icon: FiMap, label: 'Territories' }

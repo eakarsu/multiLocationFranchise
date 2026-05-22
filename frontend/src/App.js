@@ -33,6 +33,10 @@ import AITools from './pages/AITools';
 import AIAdvisors from './pages/AIAdvisors';
 import Profile from './pages/Profile';
 import CustomViewsPage from './pages/CustomViewsPage';
+import StoreOpeningReadiness from './pages/StoreOpeningReadiness';
+
+import CodexCustomVizFeature from './pages/CodexCustomVizFeature';
+import CodexOperationsFeature from './pages/CodexOperationsFeature';
 
 // Protected Route Wrapper
 const ProtectedRoute = ({ children }) => {
@@ -86,6 +90,9 @@ function AppRoutes() {
 
   return (
     <Routes>
+        <Route path="/codex/custom-viz" element={<ProtectedRoute><CodexCustomVizFeature /></ProtectedRoute>} />
+        <Route path="/codex/operations" element={<ProtectedRoute><CodexOperationsFeature /></ProtectedRoute>} />
+
       <Route path="/login" element={user ? <Navigate to="/dashboard" replace /> : <Login />} />
       <Route path="/forgot-password" element={user ? <Navigate to="/dashboard" replace /> : <ForgotPassword />} />
 
@@ -189,6 +196,9 @@ function AppRoutes() {
 
       <Route path="/custom-views" element={
         <ProtectedRoute><CustomViewsPage /></ProtectedRoute>
+      } />
+      <Route path="/store-opening-readiness" element={
+        <ProtectedRoute><StoreOpeningReadiness /></ProtectedRoute>
       } />
 
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
