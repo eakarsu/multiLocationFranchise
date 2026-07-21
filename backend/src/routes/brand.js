@@ -711,7 +711,7 @@ router.put('/compliance-checklists/:id', authenticateToken, isCorporate, async (
     const { name, category, description, isActive, items } = req.body;
 
     // Update checklist
-    const checklist = await req.prisma.complianceChecklist.update({
+    await req.prisma.complianceChecklist.update({
       where: { id: req.params.id },
       data: { name, category, description, isActive }
     });

@@ -1,0 +1,101 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}-database-password
+          POSTGRES_DB: franchise_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d franchise_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:ci-${{ github.run_id }}-${{ github.run_attempt }}-database-password@localhost:5432/franchise_test
+      JWT_SECRET: ci-${{ github.run_id }}-${{ github.run_attempt }}-jwt-secret-with-more-than-thirty-two-characters
+      INTERNAL_JOB_SECRET: ci-${{ github.run_id }}-${{ github.run_attempt }}-job-secret-with-more-than-thirty-two-characters
+      OUTBOX_ENCRYPTION_KEY: ci-${{ github.run_id }}-${{ github.run_attempt }}-encryption-key-with-more-than-thirty-two-characters
+      CORS_ORIGINS: http://localhost:5173
+      PUBLIC_APP_URL: http://localhost:5173
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.0
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+      - run: npm ci --prefix backend
+      - run: npm ci --prefix frontend
+      - run: npm audit --prefix backend --audit-level=low
+      - run: npm audit --prefix frontend --audit-level=low
+      - run: npm run prisma:validate --prefix backend
+      - run: npm run prisma:generate --prefix backend
+      - run: npm run prisma:migrate:deploy --prefix backend
+      - run: npm run lint
+      - run: npm test --prefix backend
+      - run: npm run test:e2e --prefix backend
+      - run: npm run build --prefix frontend
+      - name: Scan current tree and full history for secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: docker build --target app -t franchise-platform:ci .
+      - run: docker build --target migrate -t franchise-platform-migrate:ci .
+
+  migration-upgrade:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}-database-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGPASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}-database-password
+      DATABASE_URL: postgresql://postgres:ci-${{ github.run_id }}-${{ github.run_attempt }}-database-password@localhost:5432/franchise_upgrade
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.0
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci --prefix backend
+      - run: createdb -h localhost -U postgres franchise_upgrade
+      - run: psql -h localhost -U postgres -d franchise_upgrade -v ON_ERROR_STOP=1 -f backend/prisma/migrations/20260720090000_baseline/migration.sql
+      - run: npx prisma migrate resolve --applied 20260720090000_baseline
+        working-directory: backend
+      - name: Add a legacy plaintext reset token
+        run: psql -h localhost -U postgres -d franchise_upgrade -v ON_ERROR_STOP=1 -c "INSERT INTO \"User\" (id,email,password,\"firstName\",\"lastName\",role,\"passwordResetToken\",\"passwordResetExpires\",\"createdAt\",\"updatedAt\") VALUES ('upgrade-user','upgrade@example.test','hash','Upgrade','Test','STAFF','legacy-token',NOW()+INTERVAL '1 hour',NOW(),NOW())"
+      - run: npm run prisma:migrate:deploy --prefix backend
+      - name: Verify legacy reset tokens were invalidated
+        run: test "$(psql -h localhost -U postgres -d franchise_upgrade -Atc 'SELECT COUNT(*) FROM "User" WHERE "passwordResetToken" IS NOT NULL')" = "0"

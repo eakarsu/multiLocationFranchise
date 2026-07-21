@@ -1,0 +1,16 @@
+{
+  "name": "multi-location-franchise",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "install:all": "npm ci --prefix backend && npm ci --prefix frontend",
+    "lint": "npm run lint --prefix backend && npm run lint --prefix frontend",
+    "test": "npm test --prefix backend",
+    "build": "npm run build --prefix frontend",
+    "audit": "npm audit --prefix backend --audit-level=high && npm audit --prefix frontend --audit-level=high",
+    "verify": "npm run lint && npm test && npm run build && npm run audit"
+  },
+  "engines": {
+    "node": ">=22.12"
+  }
+}

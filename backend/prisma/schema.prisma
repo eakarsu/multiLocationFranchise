@@ -34,6 +34,12 @@ model User {
   auditLogs         AuditLog[]
   issueReports      IssueReport[]
   knowledgeArticles KnowledgeArticle[]
+  ownedAccounts     Account[]        @relation("AccountOwner")
+  ownedLeads        Lead[]           @relation("LeadOwner")
+  leadTransitions   LeadTransition[] @relation("LeadTransitionActor")
+  outreachRequests  Outreach[]       @relation("OutreachRequester")
+  outreachApprovals Outreach[]       @relation("OutreachApprover")
+  consentEvents     ConsentEvent[]   @relation("ConsentRecorder")
 }
 
 enum UserRole {
@@ -79,6 +85,7 @@ model Location {
   issueReports    IssueReport[]
   checklists      ChecklistCompletion[]
   aiAnalyses      AIAnalysis[]
+  leads           Lead[]
 }
 
 enum LocationStatus {
@@ -501,4 +508,363 @@ model SystemSetting {
   description String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+}
+
+// Governed revenue workflow
+enum LeadLifecycleStatus {
+  NEW
+  QUALIFIED
+  DISQUALIFIED
+  PENDING_APPROVAL
+  APPROVED
+  CONTACTED
+  NURTURING
+  HANDED_OFF
+  CONVERTED
+  LOST
+  SUPPRESSED
+}
+
+enum AccountLifecycleStatus {
+  PROSPECT
+  ACTIVE
+  INACTIVE
+  CHURNED
+}
+
+enum OwnershipStatus {
+  UNASSIGNED
+  ASSIGNED
+  ACCEPTED
+  REASSIGN_REQUESTED
+}
+
+enum ApprovalStatus {
+  NOT_REQUIRED
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum HandoffStatus {
+  NOT_READY
+  READY
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+}
+
+enum ConsentStatus {
+  UNKNOWN
+  OPTED_IN
+  OPTED_OUT
+}
+
+enum OutreachChannel {
+  EMAIL
+  SMS
+}
+
+enum OutreachStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  QUEUED
+  SENT
+  DELIVERED
+  BOUNCED
+  COMPLAINED
+  CANCELLED
+  SUPPRESSED
+}
+
+enum SuppressionReason {
+  OPT_OUT
+  HARD_BOUNCE
+  COMPLAINT
+  LEGAL
+  MANUAL
+}
+
+enum SyncDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum SyncStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  DEAD_LETTER
+}
+
+enum WebhookProcessingStatus {
+  RECEIVED
+  PROCESSED
+  IGNORED
+  FAILED
+}
+
+model Account {
+  id              String                 @id @default(uuid())
+  dedupeKey       String                 @unique
+  externalCrmId   String?                @unique
+  name            String
+  domain          String?
+  countryCode     String                 @default("US")
+  region          String?
+  status          AccountLifecycleStatus @default(PROSPECT)
+  ownerId         String?
+  attributionSource String?
+  attributionCampaign String?
+  version         Int                    @default(1)
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  owner User?  @relation("AccountOwner", fields: [ownerId], references: [id])
+  leads Lead[]
+
+  @@index([ownerId, status])
+}
+
+model Lead {
+  id                String              @id @default(uuid())
+  dedupeKey         String              @unique
+  externalCrmId     String?             @unique
+  accountId         String?
+  locationId        String?
+  ownerId           String?
+  email             String?
+  normalizedEmail   String?
+  phone             String?
+  firstName         String?
+  lastName          String?
+  companyName       String?
+  countryCode       String              @default("US")
+  region            String?
+  source            String
+  attributionSource String?
+  attributionCampaign String?
+  status            LeadLifecycleStatus @default(NEW)
+  ownershipStatus   OwnershipStatus     @default(UNASSIGNED)
+  approvalStatus    ApprovalStatus      @default(NOT_REQUIRED)
+  handoffStatus     HandoffStatus       @default(NOT_READY)
+  qualityScore      Int?
+  version           Int                 @default(1)
+  lastContactedAt   DateTime?
+  convertedAt       DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  account      Account?           @relation(fields: [accountId], references: [id])
+  location     Location?          @relation(fields: [locationId], references: [id])
+  owner        User?              @relation("LeadOwner", fields: [ownerId], references: [id])
+  transitions  LeadTransition[]
+  policies     ContactPolicy[]
+  consents     ConsentEvent[]
+  outreaches   Outreach[]
+  enrichments  EnrichmentRecord[]
+  attribution  AttributionTouch[]
+
+  @@index([status, ownerId])
+  @@index([locationId, status])
+  @@index([normalizedEmail])
+}
+
+model LeadTransition {
+  id          String               @id @default(uuid())
+  leadId      String
+  fromStatus  LeadLifecycleStatus?
+  toStatus    LeadLifecycleStatus
+  actorId     String?
+  reason      String?
+  metadata    Json?
+  createdAt   DateTime             @default(now())
+
+  lead  Lead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  actor User? @relation("LeadTransitionActor", fields: [actorId], references: [id])
+
+  @@index([leadId, createdAt])
+}
+
+model ContactPolicy {
+  id            String          @id @default(uuid())
+  leadId        String
+  channel       OutreachChannel
+  consentStatus ConsentStatus   @default(UNKNOWN)
+  legalBasis    String?
+  region        String?
+  doNotContact  Boolean         @default(false)
+  source        String
+  recordedAt    DateTime        @default(now())
+  expiresAt     DateTime?
+  updatedAt     DateTime        @updatedAt
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@unique([leadId, channel])
+  @@index([channel, consentStatus, doNotContact])
+}
+
+model ConsentEvent {
+  id         String          @id @default(uuid())
+  leadId     String
+  channel    OutreachChannel
+  status     ConsentStatus
+  source     String
+  legalBasis String?
+  evidence   Json?
+  recordedById String?
+  occurredAt DateTime
+  createdAt  DateTime        @default(now())
+
+  lead       Lead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  recordedBy User? @relation("ConsentRecorder", fields: [recordedById], references: [id])
+
+  @@index([leadId, channel, occurredAt])
+}
+
+model SuppressionEntry {
+  id              String            @id @default(uuid())
+  channel         OutreachChannel
+  normalizedValue String
+  reason          SuppressionReason
+  source          String
+  active          Boolean           @default(true)
+  expiresAt       DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@unique([channel, normalizedValue])
+  @@index([active, expiresAt])
+}
+
+model Outreach {
+  id                String         @id @default(uuid())
+  leadId            String
+  channel           OutreachChannel
+  subject           String?
+  body              String         @db.Text
+  status            OutreachStatus @default(DRAFT)
+  idempotencyKey    String         @unique
+  requestedById     String
+  approvedById      String?
+  requiresReview    Boolean        @default(true)
+  policySnapshot    Json
+  providerMessageId String?        @unique
+  scheduledAt       DateTime?
+  approvedAt        DateTime?
+  sentAt            DateTime?
+  deliveredAt       DateTime?
+  attempts          Int            @default(0)
+  nextAttemptAt     DateTime?
+  lastError         String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  lead        Lead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  requestedBy User  @relation("OutreachRequester", fields: [requestedById], references: [id])
+  approvedBy  User? @relation("OutreachApprover", fields: [approvedById], references: [id])
+
+  @@index([status, scheduledAt])
+  @@index([leadId, createdAt])
+}
+
+model SyncEvent {
+  id             String        @id @default(uuid())
+  provider       String
+  direction      SyncDirection
+  resourceType   String
+  externalId     String
+  idempotencyKey String        @unique
+  payloadHash    String
+  payload        Json
+  status         SyncStatus    @default(PENDING)
+  attempts       Int           @default(0)
+  lastError      String?
+  processedAt    DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@unique([provider, direction, resourceType, externalId])
+  @@index([status, createdAt])
+}
+
+model SyncCursor {
+  id           String   @id @default(uuid())
+  provider     String
+  resourceType String
+  cursor       String?
+  syncedAt     DateTime?
+  updatedAt    DateTime @updatedAt
+
+  @@unique([provider, resourceType])
+}
+
+model EnrichmentRecord {
+  id          String   @id @default(uuid())
+  leadId      String
+  provider    String
+  externalId  String
+  payloadHash String
+  data        Json
+  qualityScore Int?
+  appliedAt   DateTime?
+  createdAt   DateTime @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, externalId])
+  @@index([leadId, createdAt])
+}
+
+model AttributionTouch {
+  id        String   @id @default(uuid())
+  leadId    String
+  dedupeKey String   @unique
+  source    String
+  campaign  String?
+  medium    String?
+  occurredAt DateTime
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId, occurredAt])
+}
+
+model RevenueOutbox {
+  id             String     @id @default(uuid())
+  topic          String
+  aggregateType  String
+  aggregateId    String
+  payload        Json
+  idempotencyKey String     @unique
+  status         SyncStatus @default(PENDING)
+  attempts       Int        @default(0)
+  availableAt    DateTime   @default(now())
+  processedAt    DateTime?
+  lastError      String?
+  createdAt      DateTime   @default(now())
+
+  @@index([status, availableAt])
+}
+
+model ProviderWebhook {
+  id              String                  @id @default(uuid())
+  provider        String
+  externalEventId String
+  eventType       String
+  payload         Json
+  status          WebhookProcessingStatus @default(RECEIVED)
+  attempts        Int                     @default(0)
+  lastError       String?
+  processedAt     DateTime?
+  createdAt       DateTime                @default(now())
+
+  @@unique([provider, externalEventId])
+  @@index([status, createdAt])
 }

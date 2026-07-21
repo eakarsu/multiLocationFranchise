@@ -5,6 +5,28 @@ const { authenticateToken, isCorporate } = require('../middleware/auth');
 const { getPaginationParams, paginatedResponse } = require('../utils/pagination');
 
 const router = express.Router();
+const USER_ROLES = ['SUPER_ADMIN', 'CORPORATE_ADMIN', 'REGIONAL_MANAGER', 'LOCATION_MANAGER', 'STAFF'];
+
+function canManageUser(actor, targetRole) {
+  return actor.role === 'SUPER_ADMIN' || targetRole !== 'SUPER_ADMIN';
+}
+
+function safeUserSelect() {
+  return {
+    id: true,
+    email: true,
+    firstName: true,
+    lastName: true,
+    role: true,
+    phone: true,
+    avatar: true,
+    isActive: true,
+    locationId: true,
+    location: { include: { territory: true } },
+    createdAt: true,
+    updatedAt: true,
+  };
+}
 
 // Get all users (corporate only, with pagination and sorting)
 router.get('/', authenticateToken, isCorporate, async (req, res) => {
@@ -56,21 +78,12 @@ router.get('/', authenticateToken, isCorporate, async (req, res) => {
 // Get user by ID
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
+    if (!['SUPER_ADMIN', 'CORPORATE_ADMIN'].includes(req.user.role) && req.user.id !== req.params.id) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
     const user = await req.prisma.user.findUnique({
       where: { id: req.params.id },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        role: true,
-        phone: true,
-        avatar: true,
-        isActive: true,
-        locationId: true,
-        location: true,
-        createdAt: true
-      }
+      select: safeUserSelect(),
     });
 
     if (!user) {
@@ -87,10 +100,10 @@ router.get('/:id', authenticateToken, async (req, res) => {
 // Create user (corporate only)
 router.post('/', authenticateToken, isCorporate, [
   body('email').isEmail().normalizeEmail(),
-  body('password').isLength({ min: 6 }),
+  body('password').isLength({ min: 12, max: 128 }),
   body('firstName').notEmpty().trim(),
   body('lastName').notEmpty().trim(),
-  body('role').isIn(['SUPER_ADMIN', 'CORPORATE_ADMIN', 'REGIONAL_MANAGER', 'LOCATION_MANAGER', 'STAFF'])
+  body('role').isIn(USER_ROLES)
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -99,13 +112,14 @@ router.post('/', authenticateToken, isCorporate, [
     }
 
     const { email, password, firstName, lastName, role, locationId, phone } = req.body;
+    if (!canManageUser(req.user, role)) return res.status(403).json({ error: 'Not authorized' });
 
     const existingUser = await req.prisma.user.findUnique({ where: { email } });
     if (existingUser) {
       return res.status(400).json({ error: 'Email already registered' });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(password, 12);
 
     const user = await req.prisma.user.create({
       data: {
@@ -142,9 +156,13 @@ router.post('/bulk-delete', authenticateToken, isCorporate, async (req, res) => 
   try {
     const { ids } = req.body;
 
-    if (!Array.isArray(ids) || ids.length === 0) {
+    if (!Array.isArray(ids) || ids.length === 0 || ids.length > 100 || ids.includes(req.user.id)) {
       return res.status(400).json({ error: 'ids array is required' });
     }
+
+    if (req.user.role !== 'SUPER_ADMIN' && await req.prisma.user.count({
+      where: { id: { in: ids }, role: 'SUPER_ADMIN' },
+    })) return res.status(403).json({ error: 'Not authorized' });
 
     const result = await req.prisma.user.updateMany({
       where: { id: { in: ids } },
@@ -163,7 +181,7 @@ router.post('/bulk-update', authenticateToken, isCorporate, async (req, res) => 
   try {
     const { ids, data } = req.body;
 
-    if (!Array.isArray(ids) || ids.length === 0) {
+    if (!Array.isArray(ids) || ids.length === 0 || ids.length > 100) {
       return res.status(400).json({ error: 'ids array is required' });
     }
 
@@ -171,10 +189,22 @@ router.post('/bulk-update', authenticateToken, isCorporate, async (req, res) => 
       return res.status(400).json({ error: 'data object is required' });
     }
 
+    const permitted = ['role', 'locationId', 'isActive'];
+    if (Object.keys(data).some((key) => !permitted.includes(key)) ||
+      (data.role && !USER_ROLES.includes(data.role)) ||
+      (data.role && !canManageUser(req.user, data.role)) ||
+      (ids.includes(req.user.id) && data.isActive === false)) {
+      return res.status(400).json({ error: 'Bulk update contains disallowed fields' });
+    }
+    if (req.user.role !== 'SUPER_ADMIN' && await req.prisma.user.count({
+      where: { id: { in: ids }, role: 'SUPER_ADMIN' },
+    })) return res.status(403).json({ error: 'Not authorized' });
+
+    const safeData = Object.fromEntries(permitted.filter((key) => data[key] !== undefined).map((key) => [key, data[key]]));
     const updates = ids.map(id =>
       req.prisma.user.update({
         where: { id },
-        data
+        data: safeData
       })
     );
 
@@ -191,6 +221,14 @@ router.post('/bulk-update', authenticateToken, isCorporate, async (req, res) => 
 router.put('/:id', authenticateToken, isCorporate, async (req, res) => {
   try {
     const { firstName, lastName, role, locationId, phone, isActive } = req.body;
+
+    if (role && !USER_ROLES.includes(role)) return res.status(400).json({ error: 'Invalid role' });
+    const current = await req.prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!current) return res.status(404).json({ error: 'User not found' });
+    if (!canManageUser(req.user, current.role) || (role && !canManageUser(req.user, role)) ||
+      (req.user.id === req.params.id && isActive === false)) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
 
     const user = await req.prisma.user.update({
       where: { id: req.params.id },
@@ -217,7 +255,7 @@ router.put('/:id', authenticateToken, isCorporate, async (req, res) => {
 
 // Reset user password (corporate only)
 router.post('/:id/reset-password', authenticateToken, isCorporate, [
-  body('newPassword').isLength({ min: 6 })
+  body('newPassword').isLength({ min: 12, max: 128 })
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -225,11 +263,14 @@ router.post('/:id/reset-password', authenticateToken, isCorporate, [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const hashedPassword = await bcrypt.hash(req.body.newPassword, 10);
+    const target = await req.prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!target) return res.status(404).json({ error: 'User not found' });
+    if (!canManageUser(req.user, target.role)) return res.status(403).json({ error: 'Not authorized' });
+    const hashedPassword = await bcrypt.hash(req.body.newPassword, 12);
 
     await req.prisma.user.update({
       where: { id: req.params.id },
-      data: { password: hashedPassword }
+      data: { password: hashedPassword, passwordResetToken: null, passwordResetExpires: null }
     });
 
     res.json({ message: 'Password reset successfully' });
@@ -242,6 +283,10 @@ router.post('/:id/reset-password', authenticateToken, isCorporate, [
 // Delete user (soft delete)
 router.delete('/:id', authenticateToken, isCorporate, async (req, res) => {
   try {
+    if (req.user.id === req.params.id) return res.status(400).json({ error: 'You cannot deactivate yourself' });
+    const target = await req.prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!target) return res.status(404).json({ error: 'User not found' });
+    if (!canManageUser(req.user, target.role)) return res.status(403).json({ error: 'Not authorized' });
     await req.prisma.user.update({
       where: { id: req.params.id },
       data: { isActive: false }
@@ -270,20 +315,14 @@ router.get('/profile/me', authenticateToken, async (req, res) => {
   try {
     const user = await req.prisma.user.findUnique({
       where: { id: req.user.id },
-      include: {
-        location: true,
-        territory: true,
-        sentMessages: { take: 100 },
-        submittedTickets: { take: 100 }
-      }
+      select: safeUserSelect(),
     });
 
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const { password, ...userWithoutPassword } = user;
-    res.json(userWithoutPassword);
+    res.json(user);
   } catch (error) {
     console.error('Get profile error:', error);
     res.status(500).json({ error: 'Failed to get profile' });
@@ -291,8 +330,15 @@ router.get('/profile/me', authenticateToken, async (req, res) => {
 });
 
 // Update current user profile
-router.put('/profile/me', authenticateToken, async (req, res) => {
+router.put('/profile/me', authenticateToken, [
+  body('email').optional().isEmail().normalizeEmail(),
+  body('firstName').optional().isLength({ min: 1, max: 100 }).trim(),
+  body('lastName').optional().isLength({ min: 1, max: 100 }).trim(),
+  body('phone').optional({ nullable: true }).isLength({ max: 40 }).trim(),
+], async (req, res) => {
   try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
     const { firstName, lastName, email, phone } = req.body;
 
     // Check if email is already taken by another user
@@ -308,11 +354,10 @@ router.put('/profile/me', authenticateToken, async (req, res) => {
     const user = await req.prisma.user.update({
       where: { id: req.user.id },
       data: { firstName, lastName, email, phone },
-      include: { location: true, territory: true }
+      select: safeUserSelect(),
     });
 
-    const { password, ...userWithoutPassword } = user;
-    res.json(userWithoutPassword);
+    res.json(user);
   } catch (error) {
     console.error('Update profile error:', error);
     res.status(500).json({ error: 'Failed to update profile' });
@@ -328,8 +373,8 @@ router.post('/profile/change-password', authenticateToken, async (req, res) => {
       return res.status(400).json({ message: 'Current and new password are required' });
     }
 
-    if (newPassword.length < 6) {
-      return res.status(400).json({ message: 'New password must be at least 6 characters' });
+    if (newPassword.length < 12 || newPassword.length > 128) {
+      return res.status(400).json({ message: 'New password must be 12 to 128 characters' });
     }
 
     const user = await req.prisma.user.findUnique({ where: { id: req.user.id } });
@@ -339,10 +384,10 @@ router.post('/profile/change-password', authenticateToken, async (req, res) => {
       return res.status(400).json({ message: 'Current password is incorrect' });
     }
 
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
     await req.prisma.user.update({
       where: { id: req.user.id },
-      data: { password: hashedPassword }
+      data: { password: hashedPassword, passwordResetToken: null, passwordResetExpires: null }
     });
 
     res.json({ message: 'Password changed successfully' });

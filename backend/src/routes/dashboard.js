@@ -129,10 +129,11 @@ router.get('/benchmarks', authenticateToken, isCorporate, async (req, res) => {
 
     let startDate;
     switch (period) {
-      case 'quarter':
+      case 'quarter': {
         const quarterStart = Math.floor(currentMonth / 3) * 3;
         startDate = new Date(currentYear, quarterStart, 1);
         break;
+      }
       case 'year':
         startDate = new Date(currentYear, 0, 1);
         break;

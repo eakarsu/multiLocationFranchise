@@ -1,5 +1,12 @@
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
+const crypto = require('node:crypto');
+
+if (process.env.NODE_ENV === 'production' || process.env.ALLOW_DESTRUCTIVE_DEMO_SEED !== 'true') {
+  throw new Error(
+    'Refusing destructive demo seed. Use a disposable non-production database and set ALLOW_DESTRUCTIVE_DEMO_SEED=true.',
+  );
+}
 
 const prisma = new PrismaClient();
 
@@ -125,9 +132,12 @@ async function main() {
   console.log('Created operating hours');
 
   // Create users (20+)
-  const hashedPassword = await bcrypt.hash('admin123', 10);
-  const hashedCorpPassword = await bcrypt.hash('corp123', 10);
-  const hashedManagerPassword = await bcrypt.hash('manager123', 10);
+  const adminPassword = crypto.randomBytes(18).toString('base64url');
+  const corporatePassword = crypto.randomBytes(18).toString('base64url');
+  const managerPassword = crypto.randomBytes(18).toString('base64url');
+  const hashedPassword = await bcrypt.hash(adminPassword, 12);
+  const hashedCorpPassword = await bcrypt.hash(corporatePassword, 12);
+  const hashedManagerPassword = await bcrypt.hash(managerPassword, 12);
 
   const adminUser = await prisma.user.create({
     data: { email: 'admin@franchise.com', password: hashedPassword, firstName: 'System', lastName: 'Admin', role: 'SUPER_ADMIN', phone: '800-555-0000' }
@@ -167,7 +177,7 @@ async function main() {
   console.log('Created 22+ users');
 
   // Create products (20+)
-  const products = await Promise.all([
+  await Promise.all([
     prisma.product.create({ data: { name: 'Classic Burger', sku: 'BURG-001', basePrice: 12.99, category: 'Burgers', description: 'Our signature classic burger with fresh ingredients' } }),
     prisma.product.create({ data: { name: 'Cheese Burger', sku: 'BURG-002', basePrice: 13.99, category: 'Burgers', description: 'Classic with melted American cheese' } }),
     prisma.product.create({ data: { name: 'Bacon Burger', sku: 'BURG-003', basePrice: 14.99, category: 'Burgers', description: 'Topped with crispy bacon strips' } }),
@@ -1007,9 +1017,9 @@ async function main() {
   console.log('Seed completed successfully!');
   console.log('========================================');
   console.log('\nDefault login credentials:');
-  console.log('  Admin: admin@franchise.com / admin123');
-  console.log('  Corporate: corporate@franchise.com / corp123');
-  console.log('  Manager: manager@nyc-001.franchise.com / manager123');
+  console.log(`  Admin: admin@franchise.com / ${adminPassword}`);
+  console.log(`  Corporate: corporate@franchise.com / ${corporatePassword}`);
+  console.log(`  Manager: manager@nyc-001.franchise.com / ${managerPassword}`);
   console.log('========================================\n');
 }
 

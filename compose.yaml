@@ -1,0 +1,89 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-franchise_platform}
+      POSTGRES_USER: ${POSTGRES_USER:-franchise}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: .
+      target: migrate
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL using the db service hostname}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      target: app
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL using the db service hostname}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      JWT_ISSUER: ${JWT_ISSUER:-multi-location-franchise}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-franchise-operators}
+      INTERNAL_JOB_SECRET: ${INTERNAL_JOB_SECRET:?set INTERNAL_JOB_SECRET}
+      OUTBOX_ENCRYPTION_KEY: ${OUTBOX_ENCRYPTION_KEY:?set OUTBOX_ENCRYPTION_KEY}
+      CORS_ORIGINS: ${CORS_ORIGINS:?set CORS_ORIGINS}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:?set PUBLIC_APP_URL}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      OUTREACH_DAILY_LIMIT: ${OUTREACH_DAILY_LIMIT:-100}
+      CRM_PROVIDER: ${CRM_PROVIDER:-crm}
+      CRM_API_URL: ${CRM_API_URL:-}
+      CRM_API_KEY: ${CRM_API_KEY:-}
+      CRM_WEBHOOK_SECRET: ${CRM_WEBHOOK_SECRET:-}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-email}
+      EMAIL_API_URL: ${EMAIL_API_URL:-}
+      EMAIL_API_KEY: ${EMAIL_API_KEY:-}
+      EMAIL_WEBHOOK_SECRET: ${EMAIL_WEBHOOK_SECRET:-}
+      CALENDAR_PROVIDER: ${CALENDAR_PROVIDER:-calendar}
+      CALENDAR_API_URL: ${CALENDAR_API_URL:-}
+      CALENDAR_API_KEY: ${CALENDAR_API_KEY:-}
+      CALENDAR_WEBHOOK_SECRET: ${CALENDAR_WEBHOOK_SECRET:-}
+      ENRICHMENT_PROVIDER: ${ENRICHMENT_PROVIDER:-enrichment}
+      ENRICHMENT_API_URL: ${ENRICHMENT_API_URL:-}
+      ENRICHMENT_API_KEY: ${ENRICHMENT_API_KEY:-}
+      ENRICHMENT_WEBHOOK_SECRET: ${ENRICHMENT_WEBHOOK_SECRET:-}
+      CONSENT_PROVIDER: ${CONSENT_PROVIDER:-consent}
+      CONSENT_API_URL: ${CONSENT_API_URL:-}
+      CONSENT_API_KEY: ${CONSENT_API_KEY:-}
+      CONSENT_WEBHOOK_SECRET: ${CONSENT_WEBHOOK_SECRET:-}
+      SUPPRESSION_PROVIDER: ${SUPPRESSION_PROVIDER:-suppression}
+      SUPPRESSION_API_URL: ${SUPPRESSION_API_URL:-}
+      SUPPRESSION_API_KEY: ${SUPPRESSION_API_KEY:-}
+      SUPPRESSION_WEBHOOK_SECRET: ${SUPPRESSION_WEBHOOK_SECRET:-}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "4000:4000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/api/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+volumes:
+  postgres-data:

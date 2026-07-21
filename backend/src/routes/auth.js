@@ -1,43 +1,61 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
+const crypto = require('node:crypto');
 const { body, validationResult } = require('express-validator');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, signAccessToken } = require('../middleware/auth');
+const { seal } = require('../revenue/secrets');
 
 const router = express.Router();
+const RESET_MESSAGE = 'If that email exists, password reset instructions will be sent.';
 
-// Register
+function validationErrors(req, res) {
+  const errors = validationResult(req);
+  if (errors.isEmpty()) return false;
+  res.status(400).json({ errors: errors.array() });
+  return true;
+}
+
+function tokenDigest(token) {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+function publicAppUrl() {
+  const raw = process.env.PUBLIC_APP_URL;
+  if (!raw) throw new Error('PUBLIC_APP_URL is required to send password resets');
+  const url = new URL(raw);
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname))) {
+    throw new Error('PUBLIC_APP_URL must use HTTPS outside localhost');
+  }
+  return url;
+}
+
+// Public self-registration is intentionally disabled by default. When explicitly
+// enabled, callers can only create least-privileged, unassigned staff accounts.
 router.post('/register', [
   body('email').isEmail().normalizeEmail(),
-  body('password').isLength({ min: 6 }),
-  body('firstName').notEmpty().trim(),
-  body('lastName').notEmpty().trim()
-], async (req, res) => {
+  body('password').isLength({ min: 12, max: 128 }),
+  body('firstName').isLength({ min: 1, max: 100 }).trim(),
+  body('lastName').isLength({ min: 1, max: 100 }).trim(),
+  body('phone').optional({ nullable: true }).isLength({ max: 40 }).trim(),
+], async (req, res, next) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+    if (process.env.ALLOW_PUBLIC_REGISTRATION !== 'true') {
+      return res.status(403).json({ error: 'Public registration is disabled' });
     }
-
-    const { email, password, firstName, lastName, role, locationId, phone } = req.body;
-
+    if (validationErrors(req, res)) return;
+    const { email, password, firstName, lastName, phone } = req.body;
     const existingUser = await req.prisma.user.findUnique({ where: { email } });
-    if (existingUser) {
-      return res.status(400).json({ error: 'Email already registered' });
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
+    if (existingUser) return res.status(409).json({ error: 'Email already registered' });
 
     const user = await req.prisma.user.create({
       data: {
         email,
-        password: hashedPassword,
+        password: await bcrypt.hash(password, 12),
         firstName,
         lastName,
-        role: role || 'LOCATION_MANAGER',
-        locationId,
-        phone
+        role: 'STAFF',
+        locationId: null,
+        phone: phone || null,
       },
       select: {
         id: true,
@@ -45,152 +63,102 @@ router.post('/register', [
         firstName: true,
         lastName: true,
         role: true,
-        locationId: true
-      }
+        locationId: true,
+      },
     });
-
-    const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role, locationId: user.locationId },
-      process.env.JWT_SECRET,
-      { expiresIn: '24h' }
-    );
-
-    res.status(201).json({ user, token });
+    res.status(201).json({ user, token: signAccessToken(user) });
   } catch (error) {
-    console.error('Register error:', error);
-    res.status(500).json({ error: 'Registration failed' });
+    next(error);
   }
 });
 
-// Login
 router.post('/login', [
   body('email').isEmail().normalizeEmail(),
-  body('password').notEmpty()
-], async (req, res) => {
+  body('password').isLength({ min: 1, max: 128 }),
+], async (req, res, next) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    const { email, password } = req.body;
-
+    if (validationErrors(req, res)) return;
     const user = await req.prisma.user.findUnique({
-      where: { email },
-      include: { location: true }
+      where: { email: req.body.email },
+      include: { location: true },
     });
-
-    if (!user) {
+    if (!user || !user.isActive || !(await bcrypt.compare(req.body.password, user.password))) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-
-    if (!user.isActive) {
-      return res.status(401).json({ error: 'Account is disabled' });
-    }
-
-    const validPassword = await bcrypt.compare(password, user.password);
-    if (!validPassword) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-
-    const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role, locationId: user.locationId },
-      process.env.JWT_SECRET,
-      { expiresIn: '24h' }
-    );
-
-    const { password: _, passwordResetToken: _t, passwordResetExpires: _e, ...userWithoutPassword } = user;
-    res.json({ user: userWithoutPassword, token });
+    const safeUser = { ...user };
+    delete safeUser.password;
+    delete safeUser.passwordResetToken;
+    delete safeUser.passwordResetExpires;
+    res.json({ user: safeUser, token: signAccessToken(user) });
   } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({ error: 'Login failed' });
+    next(error);
   }
 });
 
-// Forgot Password - generates reset token
-router.post('/forgot-password', [
-  body('email').isEmail().normalizeEmail()
-], async (req, res) => {
+router.post('/forgot-password', [body('email').isEmail().normalizeEmail()], async (req, res, next) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+    if (validationErrors(req, res)) return;
+    const user = await req.prisma.user.findUnique({ where: { email: req.body.email } });
+    if (user?.isActive) {
+      const resetToken = crypto.randomBytes(32).toString('base64url');
+      const resetExpires = new Date(Date.now() + 30 * 60_000);
+      const resetUrl = new URL('/reset-password', publicAppUrl());
+      resetUrl.searchParams.set('token', resetToken);
+      const requestId = crypto.randomUUID();
+      await req.prisma.$transaction([
+        req.prisma.user.update({
+          where: { id: user.id },
+          data: {
+            passwordResetToken: tokenDigest(resetToken),
+            passwordResetExpires: resetExpires,
+          },
+        }),
+        req.prisma.revenueOutbox.create({
+          data: {
+            topic: 'auth.reset-password',
+            aggregateType: 'user',
+            aggregateId: user.id,
+            payload: { recipient: user.email, encryptedResetUrl: seal(resetUrl.toString()) },
+            idempotencyKey: `auth-reset:${user.id}:${requestId}`,
+          },
+        }),
+      ]);
     }
-
-    const { email } = req.body;
-
-    const user = await req.prisma.user.findUnique({ where: { email } });
-    if (!user) {
-      // Return success even if user not found (security best practice)
-      return res.json({ message: 'If that email exists, a reset token has been generated.' });
-    }
-
-    const resetToken = crypto.randomBytes(32).toString('hex');
-    const resetExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
-
-    await req.prisma.user.update({
-      where: { email },
-      data: {
-        passwordResetToken: resetToken,
-        passwordResetExpires: resetExpires
-      }
-    });
-
-    // In production, send email with reset link. For demo, return token directly.
-    res.json({
-      message: 'If that email exists, a reset token has been generated.',
-      resetToken // In production, remove this and send via email
-    });
+    res.json({ message: RESET_MESSAGE });
   } catch (error) {
-    console.error('Forgot password error:', error);
-    res.status(500).json({ error: 'Failed to process password reset' });
+    next(error);
   }
 });
 
-// Reset Password with token
 router.post('/reset-password', [
-  body('token').notEmpty(),
-  body('newPassword').isLength({ min: 6 })
-], async (req, res) => {
+  body('token').isLength({ min: 32, max: 256 }),
+  body('newPassword').isLength({ min: 12, max: 128 }),
+], async (req, res, next) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    const { token, newPassword } = req.body;
-
+    if (validationErrors(req, res)) return;
     const user = await req.prisma.user.findFirst({
       where: {
-        passwordResetToken: token,
-        passwordResetExpires: { gt: new Date() }
-      }
+        passwordResetToken: tokenDigest(req.body.token),
+        passwordResetExpires: { gt: new Date() },
+        isActive: true,
+      },
     });
-
-    if (!user) {
-      return res.status(400).json({ error: 'Invalid or expired reset token' });
-    }
-
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-
+    if (!user) return res.status(400).json({ error: 'Invalid or expired reset token' });
     await req.prisma.user.update({
       where: { id: user.id },
       data: {
-        password: hashedPassword,
+        password: await bcrypt.hash(req.body.newPassword, 12),
         passwordResetToken: null,
-        passwordResetExpires: null
-      }
+        passwordResetExpires: null,
+      },
     });
-
     res.json({ message: 'Password reset successfully' });
   } catch (error) {
-    console.error('Reset password error:', error);
-    res.status(500).json({ error: 'Failed to reset password' });
+    next(error);
   }
 });
 
-// Get current user
-router.get('/me', authenticateToken, async (req, res) => {
+router.get('/me', authenticateToken, async (req, res, next) => {
   try {
     const user = await req.prisma.user.findUnique({
       where: { id: req.user.id },
@@ -205,29 +173,29 @@ router.get('/me', authenticateToken, async (req, res) => {
         locationId: true,
         location: true,
         isActive: true,
-        createdAt: true
-      }
+        createdAt: true,
+      },
     });
-
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
+    if (!user) return res.status(404).json({ error: 'User not found' });
     res.json(user);
   } catch (error) {
-    console.error('Get user error:', error);
-    res.status(500).json({ error: 'Failed to get user' });
+    next(error);
   }
 });
 
-// Update profile
-router.put('/profile', authenticateToken, async (req, res) => {
+router.put('/profile', authenticateToken, [
+  body('firstName').optional().isLength({ min: 1, max: 100 }).trim(),
+  body('lastName').optional().isLength({ min: 1, max: 100 }).trim(),
+  body('phone').optional({ nullable: true }).isLength({ max: 40 }).trim(),
+  body('avatar').optional({ nullable: true }).isURL({ protocols: ['https'] }),
+], async (req, res, next) => {
   try {
-    const { firstName, lastName, phone, avatar } = req.body;
-
+    if (validationErrors(req, res)) return;
+    const permitted = ['firstName', 'lastName', 'phone', 'avatar'];
+    const data = Object.fromEntries(permitted.filter((key) => req.body[key] !== undefined).map((key) => [key, req.body[key]]));
     const user = await req.prisma.user.update({
       where: { id: req.user.id },
-      data: { firstName, lastName, phone, avatar },
+      data,
       select: {
         id: true,
         email: true,
@@ -235,47 +203,36 @@ router.put('/profile', authenticateToken, async (req, res) => {
         lastName: true,
         role: true,
         phone: true,
-        avatar: true
-      }
+        avatar: true,
+      },
     });
-
     res.json(user);
   } catch (error) {
-    console.error('Update profile error:', error);
-    res.status(500).json({ error: 'Failed to update profile' });
+    next(error);
   }
 });
 
-// Change password
 router.put('/change-password', authenticateToken, [
-  body('currentPassword').notEmpty(),
-  body('newPassword').isLength({ min: 6 })
-], async (req, res) => {
+  body('currentPassword').isLength({ min: 1, max: 128 }),
+  body('newPassword').isLength({ min: 12, max: 128 }),
+], async (req, res, next) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    const { currentPassword, newPassword } = req.body;
-
+    if (validationErrors(req, res)) return;
     const user = await req.prisma.user.findUnique({ where: { id: req.user.id } });
-
-    const validPassword = await bcrypt.compare(currentPassword, user.password);
-    if (!validPassword) {
+    if (!user || !(await bcrypt.compare(req.body.currentPassword, user.password))) {
       return res.status(400).json({ error: 'Current password is incorrect' });
     }
-
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
     await req.prisma.user.update({
       where: { id: req.user.id },
-      data: { password: hashedPassword }
+      data: {
+        password: await bcrypt.hash(req.body.newPassword, 12),
+        passwordResetToken: null,
+        passwordResetExpires: null,
+      },
     });
-
     res.json({ message: 'Password updated successfully' });
   } catch (error) {
-    console.error('Change password error:', error);
-    res.status(500).json({ error: 'Failed to change password' });
+    next(error);
   }
 });
 

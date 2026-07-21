@@ -1,116 +1,161 @@
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
+
+const path = require('node:path');
+const fs = require('node:fs');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const { PrismaClient } = require('@prisma/client');
+const { DomainError, errorResponse } = require('./revenue/errors');
 
-const authRoutes = require('./routes/auth');
-const usersRoutes = require('./routes/users');
-const locationsRoutes = require('./routes/locations');
-const territoriesRoutes = require('./routes/territories');
-const productsRoutes = require('./routes/products');
-const brandRoutes = require('./routes/brand');
-const operationsRoutes = require('./routes/operations');
-const financialRoutes = require('./routes/financial');
-const communicationRoutes = require('./routes/communication');
-const dashboardRoutes = require('./routes/dashboard');
-const aiRoutes = require('./routes/ai');
-const metadataRoutes = require('./routes/metadata');
+const routeMounts = [
+  ['/api/auth', './routes/auth'],
+  ['/api/users', './routes/users'],
+  ['/api/locations', './routes/locations'],
+  ['/api/territories', './routes/territories'],
+  ['/api/products', './routes/products'],
+  ['/api/brand', './routes/brand'],
+  ['/api/operations', './routes/operations'],
+  ['/api/financial', './routes/financial'],
+  ['/api/communication', './routes/communication'],
+  ['/api/dashboard', './routes/dashboard'],
+  ['/api/metadata', './routes/metadata'],
+  ['/api/revenue', './routes/revenue'],
+  ['/api/webhooks', './routes/providerWebhooks'],
+  ['/api/internal/jobs', './routes/internalJobs'],
+];
 
-const app = express();
-const prisma = new PrismaClient();
+function parseOrigins(value) {
+  return (value || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+    .map((origin) => new URL(origin).origin);
+}
 
-// Helmet security headers
-app.use(helmet({
-  crossOriginResourcePolicy: { policy: 'cross-origin' },
-  contentSecurityPolicy: false
-}));
+function validateRuntimeConfiguration() {
+  const required = [
+    'DATABASE_URL', 'JWT_SECRET', 'CORS_ORIGINS', 'INTERNAL_JOB_SECRET',
+    'OUTBOX_ENCRYPTION_KEY', 'PUBLIC_APP_URL',
+  ];
+  const missing = required.filter((name) => !process.env[name]);
+  if (missing.length) throw new Error(`Missing required configuration: ${missing.join(', ')}`);
+  if (process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must contain at least 32 characters');
+  if (process.env.INTERNAL_JOB_SECRET.length < 32) {
+    throw new Error('INTERNAL_JOB_SECRET must contain at least 32 characters');
+  }
+  if (process.env.OUTBOX_ENCRYPTION_KEY.length < 32) {
+    throw new Error('OUTBOX_ENCRYPTION_KEY must contain at least 32 characters');
+  }
+  parseOrigins(process.env.CORS_ORIGINS);
+  const appUrl = new URL(process.env.PUBLIC_APP_URL);
+  const loopback = ['localhost', '127.0.0.1', '::1'].includes(appUrl.hostname);
+  if (process.env.NODE_ENV === 'production' && appUrl.protocol !== 'https:' &&
+    !(appUrl.protocol === 'http:' && loopback)) {
+    throw new Error('PUBLIC_APP_URL must use HTTPS in production');
+  }
+}
 
-// Rate limiting
-const generalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200,
-  message: { error: 'Too many requests, please try again later.' },
-  standardHeaders: true,
-  legacyHeaders: false
-});
+function createApp({ prisma, corsOrigins = parseOrigins(process.env.CORS_ORIGINS) } = {}) {
+  if (!prisma) throw new Error('createApp requires a Prisma client');
+  const allowedOrigins = new Set(corsOrigins);
+  const app = express();
+  app.disable('x-powered-by');
+  if (process.env.TRUST_PROXY === 'true') app.set('trust proxy', 1);
 
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  message: { error: 'Too many authentication attempts, please try again later.' },
-  standardHeaders: true,
-  legacyHeaders: false
-});
+  app.use(helmet());
+  app.use(cors({
+    credentials: false,
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.has(origin)) return callback(null, true);
+      return callback(new DomainError('ORIGIN_DENIED', 'Origin is not allowed', 403));
+    },
+  }));
 
-app.use('/api/', generalLimiter);
-app.use('/api/auth/login', authLimiter);
-app.use('/api/auth/register', authLimiter);
-app.use('/api/auth/forgot-password', authLimiter);
+  const generalLimiter = rateLimit({
+    windowMs: 15 * 60_000,
+    limit: 300,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+  });
+  const authLimiter = rateLimit({
+    windowMs: 15 * 60_000,
+    limit: 20,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+  });
+  app.use('/api', generalLimiter);
+  app.use(['/api/auth/login', '/api/auth/register', '/api/auth/forgot-password'], authLimiter);
 
-// Middleware
-app.use(cors());
-app.use(express.json());
+  app.use(express.json({
+    limit: '1mb',
+    verify(req, _res, buffer) {
+      if (req.originalUrl.startsWith('/api/webhooks/')) req.rawBody = buffer.toString('utf8');
+    },
+  }));
+  app.use((req, _res, next) => {
+    req.prisma = prisma;
+    next();
+  });
 
-// Make prisma available to routes
-app.use((req, res, next) => {
-  req.prisma = prisma;
-  next();
-});
+  app.get('/api/health/live', (_req, res) => res.json({ status: 'ok' }));
+  app.get('/api/health/ready', async (_req, res, next) => {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      res.json({ status: 'ready' });
+    } catch (error) {
+      next(new DomainError('DATABASE_UNAVAILABLE', 'Database is not ready', 503, { cause: error }));
+    }
+  });
 
-// Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/users', usersRoutes);
-app.use('/api/locations', locationsRoutes);
-app.use('/api/territories', territoriesRoutes);
-app.use('/api/products', productsRoutes);
-app.use('/api/brand', brandRoutes);
-app.use('/api/operations', operationsRoutes);
-app.use('/api/financial', financialRoutes);
-app.use('/api/communication', communicationRoutes);
-app.use('/api/dashboard', dashboardRoutes);
-app.use('/api/ai', aiRoutes);
-app.use('/api/metadata', metadataRoutes);
-app.use('/api/brand-compliance-vision', require('./routes/brandComplianceVision')); app.use('/api/franchisee-lms', require('./routes/franchiseeLms')); app.use('/api/vendor-marketplace', require('./routes/vendorMarketplace')); app.use('/api/multi-currency-royalty', require('./routes/multiCurrencyRoyalty')); app.use('/api/mobile-briefing', require('./routes/mobileBriefing')); app.use('/api/marketing-attribution', require('./routes/marketingAttribution'));
+  for (const [prefix, modulePath] of routeMounts) app.use(prefix, require(modulePath));
 
-// Custom Views (4 endpoints — mounted before health/error handlers)
-app.use('/api/custom-views', require('./routes/customViews'));
-app.use('/api/store-opening-readiness', require('./routes/storeOpeningReadiness'));
+  app.use('/api', (_req, res) => res.status(404).json({ error: 'API route not found', code: 'NOT_FOUND' }));
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
+  const frontendDist = path.resolve(__dirname, '../../frontend/dist');
+  if (fs.existsSync(frontendDist)) {
+    app.use(express.static(frontendDist, { index: false, maxAge: process.env.NODE_ENV === 'production' ? '1h' : 0 }));
+    app.get(/^(?!\/api(?:\/|$)).*/, (_req, res) => res.sendFile(path.join(frontendDist, 'index.html')));
+  }
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ error: 'Something went wrong!' });
-});
+  app.use((err, _req, res, _next) => {
+    const response = errorResponse(err);
+    if (response.status >= 500) console.error(err);
+    res.status(response.status).json(response.body);
+  });
+  return app;
+}
 
-const PORT = process.env.PORT || 5000;
+async function start() {
+  validateRuntimeConfiguration();
+  const prisma = new PrismaClient();
+  const app = createApp({ prisma });
+  const port = Number(process.env.PORT || 4000);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT must be a valid TCP port');
+  const server = app.listen(port, '127.0.0.1', () => console.log(`Server listening on 127.0.0.1:${port}`));
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+  let shuttingDown = false;
+  async function shutdown(signal) {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`Received ${signal}; shutting down`);
+    server.close(async () => {
+      await prisma.$disconnect();
+      process.exit(0);
+    });
+    setTimeout(() => process.exit(1), 10_000).unref();
+  }
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  return { app, prisma, server };
+}
 
-// Graceful shutdown
-process.on('SIGINT', async () => {
-  await prisma.$disconnect();
-  process.exit(0);
-});
+if (require.main === module) {
+  start().catch((error) => {
+    console.error(error.message);
+    process.exit(1);
+  });
+}
 
-// === Batch 10 Gaps & Frontend Mounts === (mounts)
-app.use('/api/gap-strong-coverage-already-16-ai-endpoints', require('./routes/gap_strong_coverage_already_16_ai_endpoints'));
-app.use('/api/gap-no-vision-based-brand-compliance-audit', require('./routes/gap_no_vision_based_brand_compliance_audit'));
-app.use('/api/gap-no-franchisee-sentiment-glassdoor-style-analysis', require('./routes/gap_no_franchisee_sentiment_glassdoor_style_analysis'));
-app.use('/api/gap-no-supply-chain-optimization-across-locations', require('./routes/gap_no_supply_chain_optimization_across_locations'));
-app.use('/api/gap-no-marketing-spend-attribution-ai', require('./routes/gap_no_marketing_spend_attribution_ai'));
-app.use('/api/gap-no-real-time-pos-kpi-ingestion', require('./routes/gap_no_real_time_pos_kpi_ingestion'));
-app.use('/api/gap-no-payments-royalty-collection-automation', require('./routes/gap_no_payments_royalty_collection_automation'));
-app.use('/api/gap-no-multi-currency-multi-region-accounting', require('./routes/gap_no_multi_currency_multi_region_accounting'));
-app.use('/api/gap-no-franchisee-certification-training-lms-backend', require('./routes/gap_no_franchisee_certification_training_lms_backend'));
-app.use('/api/gap-no-vendor-supplier-marketplace', require('./routes/gap_no_vendor_supplier_marketplace'));
-app.use('/api/gap-no-support-ticketing-system', require('./routes/gap_no_support_ticketing_system'));
-app.use('/api/gap-no-mobile-app-for-franchisees', require('./routes/gap_no_mobile_app_for_franchisees'));
+module.exports = { createApp, start, parseOrigins, validateRuntimeConfiguration };

@@ -255,7 +255,7 @@ router.put('/checklists/:id', authenticateToken, isCorporate, async (req, res) =
   try {
     const { name, category, frequency, description, isActive, items } = req.body;
 
-    const checklist = await req.prisma.operationalChecklist.update({
+    await req.prisma.operationalChecklist.update({
       where: { id: req.params.id },
       data: { name, category, frequency, description, isActive }
     });

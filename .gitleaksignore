@@ -1,0 +1,3 @@
+# Removed credential in the initial launcher. Rotation and coordinated history
+# remediation remain required; only this exact historic fingerprint is accepted.
+b3ddbe0e3f123ef7829875c4970842804b4fee24:start.sh:generic-api-key:91
