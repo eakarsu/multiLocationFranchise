@@ -2,8 +2,14 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [[ -f "$ROOT_DIR/.env" ]]; then
+  set -a
+  source "$ROOT_DIR/.env"
+  set +a
+fi
 
 APP_PORT="${BACKEND_PORT:-${PORT:-4000}}"
+UI_PORT="${FRONTEND_PORT:-}"
 if [[ ! "$APP_PORT" =~ ^[0-9]+$ ]] || (( APP_PORT < 1024 || APP_PORT > 65535 )); then
   echo "ERROR: BACKEND_PORT must be an integer from 1024 through 65535." >&2
   exit 1
@@ -54,7 +60,41 @@ if command -v lsof >/dev/null 2>&1 && lsof -nP -iTCP:"$APP_PORT" -sTCP:LISTEN >/
   echo "ERROR: Port $APP_PORT is already in use; no process was changed." >&2
   exit 1
 fi
+if [[ -n "$UI_PORT" ]]; then
+  if [[ ! "$UI_PORT" =~ ^[0-9]+$ ]] || (( UI_PORT < 1024 || UI_PORT > 65535 )) || [[ "$UI_PORT" == "$APP_PORT" ]]; then
+    echo "ERROR: FRONTEND_PORT must be a distinct integer from 1024 through 65535." >&2
+    exit 1
+  fi
+  if lsof -nP -iTCP:"$UI_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "ERROR: Port $UI_PORT is already in use; no process was changed." >&2
+    exit 1
+  fi
+fi
 
 cd "$ROOT_DIR/backend"
 export PORT="$APP_PORT"
-exec node src/index.js
+if [[ -z "$UI_PORT" ]]; then
+  exec node src/index.js
+fi
+
+node src/index.js &
+backend_pid=$!
+(cd "$ROOT_DIR/frontend" && VITE_API_URL="http://127.0.0.1:$APP_PORT/api" npm start -- --host 127.0.0.1 --port "$UI_PORT" --strictPort) &
+frontend_pid=$!
+cleanup() {
+  trap - INT TERM EXIT
+  kill "$backend_pid" "$frontend_pid" 2>/dev/null || true
+}
+trap cleanup INT TERM EXIT
+while kill -0 "$backend_pid" 2>/dev/null && kill -0 "$frontend_pid" 2>/dev/null; do
+  sleep 1
+done
+cleanup
+set +e
+wait "$backend_pid"; backend_status=$?
+wait "$frontend_pid"; frontend_status=$?
+set -e
+if (( backend_status != 0 || frontend_status != 0 )); then
+  echo "ERROR: a child service exited unexpectedly (backend=$backend_status frontend=$frontend_status)." >&2
+  exit 1
+fi

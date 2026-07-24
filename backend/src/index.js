@@ -22,6 +22,7 @@ const routeMounts = [
   ['/api/dashboard', './routes/dashboard'],
   ['/api/metadata', './routes/metadata'],
   ['/api/revenue', './routes/revenue'],
+  ['/api/ai', './routes/runtimeAi'],
   ['/api/webhooks', './routes/providerWebhooks'],
   ['/api/internal/jobs', './routes/internalJobs'],
 ];
