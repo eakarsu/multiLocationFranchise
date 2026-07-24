@@ -34,7 +34,7 @@ jobs:
       PUBLIC_APP_URL: http://localhost:5173
       NODE_ENV: test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: actions/setup-node@v4
@@ -81,7 +81,7 @@ jobs:
       PGPASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}-database-password
       DATABASE_URL: postgresql://postgres:ci-${{ github.run_id }}-${{ github.run_attempt }}-database-password@localhost:5432/franchise_upgrade
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: actions/setup-node@v4
