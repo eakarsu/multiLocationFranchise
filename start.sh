@@ -148,6 +148,10 @@ fi
 
 cd "$ROOT_DIR/backend"
 export PORT="$APP_PORT"
+if [[ "${NODE_ENV:-development}" != production && "${ENABLE_DEMO_CREDENTIAL_AUTOFILL:-true}" == true ]]; then
+  npx prisma db push
+  node prisma/create-admin.js
+fi
 if [[ -z "$UI_PORT" ]]; then
   exec node src/index.js
 fi
