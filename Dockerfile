@@ -1,12 +1,12 @@
 # syntax=docker/dockerfile:1.7
-FROM node:22.22-bookworm-slim AS frontend-build
+FROM node:26.9-bookworm-slim AS frontend-build
 WORKDIR /build/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
-FROM node:22.22-bookworm-slim AS backend-deps
+FROM node:26.9-bookworm-slim AS backend-deps
 WORKDIR /build/backend
 COPY backend/package.json backend/package-lock.json ./
 COPY backend/prisma ./prisma
@@ -19,7 +19,7 @@ CMD ["npx", "prisma", "migrate", "deploy"]
 FROM backend-deps AS backend-production-deps
 RUN npm prune --omit=dev
 
-FROM node:22.22-bookworm-slim AS app
+FROM node:26.9-bookworm-slim AS app
 ENV NODE_ENV=production PORT=4000
 WORKDIR /app/backend
 RUN groupadd --system app && useradd --system --gid app --home-dir /app app
