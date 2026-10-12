@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { operationsAPI, locationsAPI, brandAPI } from '../services/api';
+import { operationsAPI, locationsAPI, brandAPI, responseRows } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { FiPlus, FiEdit2, FiTrash2, FiClipboard, FiCalendar, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 import toast from 'react-hot-toast';
@@ -301,10 +301,10 @@ const ComplianceAudits = () => {
         locationsAPI.getAll(),
         brandAPI.getComplianceChecklists()
       ]);
-      setItems(auditRes.data.data);
+      setItems(responseRows(auditRes.data));
       setPagination(auditRes.data.pagination);
-      setLocations(locRes.data);
-      setChecklists(checkRes.data);
+      setLocations(responseRows(locRes.data));
+      setChecklists(responseRows(checkRes.data));
     } catch (error) { toast.error('Failed to load audits'); }
     finally { setLoading(false); }
   }, [page, sortBy, sortOrder, statusFilter]);

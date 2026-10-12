@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { communicationAPI } from '../services/api';
+import { communicationAPI, responseRows } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { FiPlus, FiEdit2, FiTrash2, FiHelpCircle, FiSearch, FiEye, FiX } from 'react-icons/fi';
 import toast from 'react-hot-toast';
@@ -39,7 +39,7 @@ const KnowledgeBase = () => {
         communicationAPI.getArticles({ search, category: categoryFilter, page, limit: 15, sortBy, sortOrder }),
         communicationAPI.getCategories()
       ]);
-      setItems(articlesRes.data.data);
+      setItems(responseRows(articlesRes.data));
       setPagination(articlesRes.data.pagination);
       setCategories(catRes.data);
       setSelectedIds([]);

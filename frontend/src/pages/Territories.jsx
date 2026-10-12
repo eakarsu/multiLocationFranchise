@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { territoriesAPI } from '../services/api';
+import { territoriesAPI, responseRows } from '../services/api';
 import { FiPlus, FiSearch, FiEdit2, FiTrash2, FiMap } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import Pagination from '../components/Pagination';
@@ -35,7 +35,7 @@ const Territories = () => {
   const loadData = useCallback(async () => {
     try {
       const res = await territoriesAPI.getAll({ search, page, limit: 15, sortBy, sortOrder });
-      setTerritories(res.data.data);
+      setTerritories(responseRows(res.data));
       setPagination(res.data.pagination);
     } catch (error) { toast.error('Failed to load territories'); }
     finally { setLoading(false); }

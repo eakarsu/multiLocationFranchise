@@ -95,6 +95,28 @@ router.post('/login', [
   }
 });
 
+// Local demo sessions use the existing configured account without exposing its
+// credentials to the browser bundle or creating another account.
+router.post('/demo-login', async (req, res, next) => {
+  try {
+    if (process.env.NODE_ENV === 'production' || !process.env.DEMO_EMAIL || !process.env.DEMO_PASSWORD) {
+      return res.status(503).json({ error: 'Demo login is not configured for this session' });
+    }
+    const user = await req.prisma.user.findUnique({
+      where: { email: process.env.DEMO_EMAIL },
+      include: { location: true },
+    });
+    if (!user?.isActive || !(await bcrypt.compare(process.env.DEMO_PASSWORD, user.password))) {
+      return res.status(503).json({ error: 'The configured demo account is unavailable' });
+    }
+    const safeUser = { ...user };
+    delete safeUser.password;
+    delete safeUser.passwordResetToken;
+    delete safeUser.passwordResetExpires;
+    return res.json({ user: safeUser, token: signAccessToken(user) });
+  } catch (error) { return next(error); }
+});
+
 router.post('/forgot-password', [body('email').isEmail().normalizeEmail()], async (req, res, next) => {
   try {
     if (validationErrors(req, res)) return;

@@ -1,3 +1,4 @@
+import NativeAIReadiness from './pages/NativeAIReadiness';
 import React, { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
@@ -88,6 +89,7 @@ function AppRoutes() {
       <Route path="/forgot-password" element={user ? <Navigate to="/dashboard" replace /> : <ForgotPassword />} />
       <Route path="/reset-password" element={user ? <Navigate to="/dashboard" replace /> : <ForgotPassword />} />
 
+      <Route path="/ai-workspace" element={<ProtectedRoute><NativeAIReadiness /></ProtectedRoute>} />
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
       <Route path="/dashboard" element={

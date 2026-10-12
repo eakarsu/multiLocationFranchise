@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { communicationAPI, usersAPI } from '../services/api';
+import { communicationAPI, usersAPI, responseRows } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { PageSkeleton } from '../components/LoadingSkeleton';
@@ -22,18 +22,20 @@ const Messages = () => {
 
   const loadData = useCallback(async () => {
     try {
-      const [inboxRes, sentRes, usersRes] = await Promise.all([
+      const [inboxRes, sentRes] = await Promise.all([
         communicationAPI.getInbox(),
-        communicationAPI.getSent(),
-        usersAPI.getAll()
+        communicationAPI.getSent()
       ]);
-      setInbox(Array.isArray(inboxRes.data) ? inboxRes.data : inboxRes.data.data || []);
-      setSent(Array.isArray(sentRes.data) ? sentRes.data : sentRes.data.data || []);
-      const usersData = Array.isArray(usersRes.data) ? usersRes.data : usersRes.data.data || [];
-      setUsers(usersData.filter(u => u.id !== user.id));
+      setInbox(responseRows(inboxRes.data));
+      setSent(responseRows(sentRes.data));
+      // The user directory route is corporate-only; inbox access is not.
+      if (['SUPER_ADMIN', 'CORPORATE_ADMIN'].includes(user.role)) {
+        const usersRes = await usersAPI.getAll({ limit: 100 });
+        setUsers(responseRows(usersRes.data).filter(u => u.id !== user.id));
+      }
     } catch (error) { toast.error('Failed to load messages'); }
     finally { setLoading(false); }
-  }, [user.id]);
+  }, [user.id, user.role]);
 
   useEffect(() => { loadData(); }, [loadData]);
 

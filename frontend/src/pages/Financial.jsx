@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { financialAPI, locationsAPI } from '../services/api';
+import { financialAPI, locationsAPI, responseRows } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { FiPlus, FiDollarSign, FiTrendingUp, FiTrendingDown, FiCalendar, FiChevronLeft, FiChevronRight, FiTrash2, FiEdit2, FiX } from 'react-icons/fi';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
@@ -270,9 +270,9 @@ const Financial = () => {
         locationsAPI.getAll(),
         financialAPI.getStats()
       ]);
-      setData(finRes.data.data);
+      setData(responseRows(finRes.data));
       setPagination(finRes.data.pagination);
-      setLocations(locRes.data);
+      setLocations(responseRows(locRes.data));
       setStats(statsRes.data);
       setSelectedIds([]);
     } catch (error) { toast.error('Failed to load financial data'); }

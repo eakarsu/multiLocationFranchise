@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { communicationAPI } from '../services/api';
+import { communicationAPI, responseRows } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useMetadata } from '../hooks/useMetadata';
 import Pagination from '../components/Pagination';
@@ -49,7 +49,7 @@ const SupportTickets = () => {
     try {
       const res = await communicationAPI.getTickets({ status: statusFilter, priority: priorityFilter, search, page, limit: 15, sortBy, sortOrder });
       if (res.data.data) {
-        setItems(res.data.data);
+        setItems(responseRows(res.data));
         setPagination(res.data.pagination);
       } else {
         setItems(Array.isArray(res.data) ? res.data : []);

@@ -2,6 +2,13 @@ import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
+// List routes return { data, pagination }; a few unpaginated lookup routes return arrays.
+export function responseRows(payload) {
+  const rows = Array.isArray(payload) ? payload : payload?.data;
+  if (!Array.isArray(rows)) throw new TypeError('The server returned an invalid record list.');
+  return rows;
+}
+
 const api = axios.create({
   baseURL: API_URL,
   headers: {
@@ -34,6 +41,7 @@ api.interceptors.response.use(
 // Auth
 export const authAPI = {
   login: (data) => api.post('/auth/login', data),
+  demoLogin: () => api.post('/auth/demo-login'),
   register: (data) => api.post('/auth/register', data),
   getMe: () => api.get('/auth/me'),
   updateProfile: (data) => api.put('/auth/profile', data),

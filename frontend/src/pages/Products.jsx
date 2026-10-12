@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { productsAPI } from '../services/api';
+import { productsAPI, responseRows } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { FiPlus, FiSearch, FiEdit2, FiTrash2, FiPackage } from 'react-icons/fi';
 import toast from 'react-hot-toast';
@@ -43,7 +43,7 @@ const Products = () => {
         productsAPI.getAll({ search, category: categoryFilter, page, limit: 15, sortBy, sortOrder }),
         productsAPI.getCategories()
       ]);
-      setProducts(prodRes.data.data);
+      setProducts(responseRows(prodRes.data));
       setPagination(prodRes.data.pagination);
       setCategories(catRes.data);
     } catch (error) { toast.error('Failed to load products'); }

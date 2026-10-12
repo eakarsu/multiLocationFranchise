@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { brandAPI } from '../services/api';
+import { brandAPI, responseRows } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { FiPlus, FiEdit2, FiTrash2, FiTruck, FiGlobe, FiPhone, FiMail, FiSearch } from 'react-icons/fi';
 import toast from 'react-hot-toast';
@@ -34,7 +34,7 @@ const ApprovedVendors = () => {
     try {
       setLoading(true);
       const res = await brandAPI.getVendors({ page, limit: 15, sortBy, sortOrder, search, status: filterState });
-      setItems(res.data.data);
+      setItems(responseRows(res.data));
       setPagination(res.data.pagination);
     } catch (error) { toast.error('Failed to load vendors'); }
     finally { setLoading(false); }

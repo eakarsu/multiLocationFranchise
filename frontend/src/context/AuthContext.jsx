@@ -39,6 +39,15 @@ export const AuthProvider = ({ children }) => {
     return user;
   };
 
+  const loginDemo = async () => {
+    const response = await authAPI.demoLogin();
+    const { user: demoUser, token } = response.data;
+    localStorage.setItem('token', token);
+    localStorage.setItem('user', JSON.stringify(demoUser));
+    setUser(demoUser);
+    return demoUser;
+  };
+
   const logout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
@@ -59,7 +68,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, updateUser, isCorporate, isManager }}>
+    <AuthContext.Provider value={{ user, loading, login, loginDemo, logout, updateUser, isCorporate, isManager }}>
       {children}
     </AuthContext.Provider>
   );

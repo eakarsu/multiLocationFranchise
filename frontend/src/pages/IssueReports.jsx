@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { operationsAPI, locationsAPI } from '../services/api';
+import { operationsAPI, locationsAPI, responseRows } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useMetadata } from '../hooks/useMetadata';
 import { FiPlus, FiEdit2, FiTrash2, FiAlertCircle } from 'react-icons/fi';
@@ -40,9 +40,9 @@ const IssueReports = () => {
         operationsAPI.getIssues({ page, limit: 15, sortBy, sortOrder, status: statusFilter, priority: priorityFilter }),
         locationsAPI.getAll()
       ]);
-      setItems(issueRes.data.data);
+      setItems(responseRows(issueRes.data));
       setPagination(issueRes.data.pagination);
-      setLocations(locRes.data);
+      setLocations(responseRows(locRes.data));
     } catch (error) { toast.error('Failed to load issues'); }
     finally { setLoading(false); }
   }, [page, sortBy, sortOrder, statusFilter, priorityFilter]);

@@ -3,6 +3,34 @@ const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
 
+const ownReports = (userId) => ({
+  type: 'REPORT_GENERATION',
+  input: { path: ['requestedBy'], equals: userId },
+});
+
+router.get('/franchise-portfolio-review/history', authenticateToken, async (req, res, next) => {
+  try {
+    const reports = await req.prisma.aIAnalysis.findMany({
+      where: ownReports(req.user.id),
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      select: { id: true, createdAt: true, output: true },
+    });
+    return res.json(reports);
+  } catch (error) { return next(error); }
+});
+
+router.get('/franchise-portfolio-review/history/:id', authenticateToken, async (req, res, next) => {
+  try {
+    const report = await req.prisma.aIAnalysis.findFirst({
+      where: { ...ownReports(req.user.id), id: req.params.id },
+      select: { id: true, createdAt: true, output: true },
+    });
+    if (!report) return res.status(404).json({ error: 'Report not found' });
+    return res.json(report);
+  } catch (error) { return next(error); }
+});
+
 router.post('/franchise-portfolio-review', authenticateToken, async (req, res, next) => {
   try {
     const prompt = String(req.body?.prompt || req.body?.context || '').trim();
@@ -12,7 +40,7 @@ router.post('/franchise-portfolio-review', authenticateToken, async (req, res, n
     const model = String(process.env.OPENROUTER_MODEL || '').trim();
     const apiKey = String(process.env.OPENROUTER_API_KEY || '').trim();
     if (baseUrl !== 'https://openrouter.ai/api/v1' || !model || !apiKey) {
-      return res.status(503).json({ error: 'Exact OpenRouter configuration is required' });
+      return res.json({ available: false, message: 'AI generation is unavailable because OpenRouter is not configured. No report was generated or saved.' });
     }
 
     const controller = new AbortController();
@@ -39,12 +67,16 @@ router.post('/franchise-portfolio-review', authenticateToken, async (req, res, n
           max_tokens: 650,
         }),
       });
+    } catch (_) {
+      return res.json({ available: false, message: 'OpenRouter could not be reached. No report was generated or saved.' });
     } finally {
       clearTimeout(timer);
     }
 
-    if (!providerResponse.ok) throw new Error(`OpenRouter API error (${providerResponse.status})`);
-    const provider = await providerResponse.json();
+    if (!providerResponse.ok) return res.json({ available: false, message: `OpenRouter did not complete the request (HTTP ${providerResponse.status}). No report was generated or saved.` });
+    let provider;
+    try { provider = await providerResponse.json(); }
+    catch (_) { return res.json({ available: false, message: 'OpenRouter returned an unreadable response. No report was generated or saved.' }); }
     const content = String(provider.choices?.[0]?.message?.content || '').trim();
     const providerReceipt = {
       requestId: String(provider.id || ''),
@@ -52,7 +84,7 @@ router.post('/franchise-portfolio-review', authenticateToken, async (req, res, n
       upstreamModel: String(provider.model || model),
       created: Number(provider.created || 0),
     };
-    if (!content || !providerReceipt.requestId) throw new Error('OpenRouter response or provider receipt is missing');
+    if (!content || !providerReceipt.requestId) return res.json({ available: false, message: 'OpenRouter returned an incomplete response. No report was generated or saved.' });
 
     const saved = await req.prisma.aIAnalysis.create({
       data: {

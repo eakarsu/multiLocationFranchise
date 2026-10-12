@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { usersAPI, locationsAPI } from '../services/api';
+import { usersAPI, locationsAPI, responseRows } from '../services/api';
 import { FiPlus, FiSearch, FiEdit2, FiTrash2, FiUser } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import Pagination from '../components/Pagination';
@@ -52,10 +52,10 @@ const Users = () => {
         usersAPI.getAll({ search, role: roleFilter, page, limit: 15, sortBy, sortOrder }),
         locationsAPI.getAll()
       ]);
-      setUsers(usersRes.data.data);
+      setUsers(responseRows(usersRes.data));
       setPagination(usersRes.data.pagination);
       const locData = locRes.data;
-      setLocations(Array.isArray(locData) ? locData : locData.data || []);
+      setLocations(responseRows(locData));
     } catch (error) {
       toast.error('Failed to load users');
     } finally { setLoading(false); }

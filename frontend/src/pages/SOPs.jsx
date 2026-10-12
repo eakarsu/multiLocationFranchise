@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { operationsAPI } from '../services/api';
+import { operationsAPI, responseRows } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { FiPlus, FiEdit2, FiTrash2, FiFileText, FiEye } from 'react-icons/fi';
 import toast from 'react-hot-toast';
@@ -33,7 +33,7 @@ const SOPs = () => {
     try {
       setLoading(true);
       const res = await operationsAPI.getSOPs({ page, limit: 15, sortBy, sortOrder });
-      setItems(res.data.data);
+      setItems(responseRows(res.data));
       setPagination(res.data.pagination);
     } catch (error) { toast.error('Failed to load SOPs'); }
     finally { setLoading(false); }

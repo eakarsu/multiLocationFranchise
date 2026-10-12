@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { locationsAPI, territoriesAPI } from '../services/api';
+import { locationsAPI, territoriesAPI, responseRows } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useMetadata } from '../hooks/useMetadata';
 import { FiPlus, FiSearch, FiEdit2, FiTrash2, FiMapPin, FiEye } from 'react-icons/fi';
@@ -51,9 +51,9 @@ const Locations = () => {
         locationsAPI.getAll({ search, status: statusFilter, territoryId: territoryFilter, page, limit: 15, sortBy, sortOrder }),
         territoriesAPI.getAll()
       ]);
-      setLocations(locRes.data.data);
+      setLocations(responseRows(locRes.data));
       setPagination(locRes.data.pagination);
-      setTerritories(Array.isArray(terRes.data) ? terRes.data : terRes.data.data || []);
+      setTerritories(responseRows(terRes.data));
     } catch (error) {
       toast.error('Failed to load locations');
     } finally {

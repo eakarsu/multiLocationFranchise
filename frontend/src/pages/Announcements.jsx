@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { communicationAPI } from '../services/api';
+import { communicationAPI, responseRows } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { FiPlus, FiEdit2, FiTrash2, FiBell, FiSend, FiCalendar, FiChevronLeft, FiChevronRight, FiX } from 'react-icons/fi';
 import toast from 'react-hot-toast';
@@ -321,7 +321,7 @@ const Announcements = () => {
         isPublished: isCorporate() ? undefined : 'true',
         page, limit: 15, sortBy, sortOrder
       });
-      setItems(res.data.data);
+      setItems(responseRows(res.data));
       setPagination(res.data.pagination);
       setSelectedIds([]);
     } catch (error) { toast.error('Failed to load announcements'); }

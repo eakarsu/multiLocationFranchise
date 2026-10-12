@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { financialAPI, locationsAPI } from '../services/api';
+import { financialAPI, locationsAPI, responseRows } from '../services/api';
 import { useMetadata } from '../hooks/useMetadata';
 import { FiPlus, FiEdit2, FiPercent, FiCheck, FiCalendar, FiChevronLeft, FiChevronRight, FiTrash2, FiX } from 'react-icons/fi';
 import toast from 'react-hot-toast';
@@ -269,9 +269,9 @@ const Royalties = () => {
         financialAPI.getRoyalties({ status: statusFilter, page, limit: 15, sortBy, sortOrder }),
         locationsAPI.getAll()
       ]);
-      setItems(royRes.data.data);
+      setItems(responseRows(royRes.data));
       setPagination(royRes.data.pagination);
-      setLocations(locRes.data);
+      setLocations(responseRows(locRes.data));
       setSelectedIds([]);
     } catch (error) { toast.error('Failed to load royalties'); }
     finally { setLoading(false); }

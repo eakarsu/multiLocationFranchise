@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { operationsAPI, locationsAPI } from '../services/api';
+import { operationsAPI, locationsAPI, responseRows } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useMetadata } from '../hooks/useMetadata';
 import { FiPlus, FiEdit2, FiTrash2, FiCheckSquare, FiCheck } from 'react-icons/fi';
@@ -41,9 +41,9 @@ const OperationalChecklists = () => {
         operationsAPI.getChecklists({ page, limit: 15, sortBy, sortOrder }),
         locationsAPI.getAll()
       ]);
-      setItems(checkRes.data.data);
+      setItems(responseRows(checkRes.data));
       setPagination(checkRes.data.pagination);
-      setLocations(locRes.data);
+      setLocations(responseRows(locRes.data));
     } catch (error) { toast.error('Failed to load checklists'); }
     finally { setLoading(false); }
   }, [page, sortBy, sortOrder]);

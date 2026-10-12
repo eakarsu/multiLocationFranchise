@@ -336,7 +336,7 @@ const Dashboard = () => {
               <h2 className="card-title">Quick Actions</h2>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
-              <Link to="/ai" className="btn btn-primary">
+              <Link to="/ai-workspace" className="btn btn-primary">
                 <FiTrendingUp /> AI Analysis
               </Link>
               <Link to="/operations/issues" className="btn btn-secondary">

@@ -22,7 +22,8 @@ const Sidebar = () => {
     {
       title: 'Overview',
       items: [
-        { path: '/dashboard', icon: FiGrid, label: 'Dashboard' }
+        { path: '/dashboard', icon: FiGrid, label: 'Dashboard' },
+        { path: '/ai-workspace', icon: FiMessageSquare, label: 'AI workspace' }
       ]
     },
     {
