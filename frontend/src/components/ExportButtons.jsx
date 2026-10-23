@@ -60,6 +60,7 @@ const ExportButtons = ({ data, columns, filename, title }) => {
       >
         <FiDownload /> CSV
       </button>
+      <button className="btn btn-secondary btn-sm" onClick={() => { const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `${filename}.json`; link.click(); URL.revokeObjectURL(link.href); }} title="Export as JSON"><FiDownload /> JSON</button>
       <button
         className="btn btn-secondary btn-sm"
         onClick={() => exportPDF(data, columns, filename, title)}

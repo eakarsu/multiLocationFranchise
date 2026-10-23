@@ -9,7 +9,7 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const { login, loginDemo } = useAuth();
+  const { login } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
@@ -28,18 +28,6 @@ const Login = () => {
     }
   };
 
-  const handleDemoLogin = async () => {
-    setError('');
-    setLoading(true);
-    try {
-      await loginDemo();
-      navigate('/dashboard');
-    } catch (err) {
-      setError(err.response?.data?.error || 'Demo login is unavailable for this session.');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   return (
     <div className="login-container">
@@ -97,15 +85,6 @@ const Login = () => {
           </div>
 
           <button
-            type="button"
-            onClick={handleDemoLogin}
-            disabled={loading}
-            aria-label="Log in with demo account"
-            style={{ width: '100%', marginBottom: '12px', padding: '10px 14px', borderRadius: '8px', border: '1px solid currentColor', background: 'transparent', cursor: 'pointer' }}
-          >
-            Log in with demo account
-          </button>
-          <button
             type="submit"
             className="btn btn-primary login-btn"
             disabled={loading}
@@ -118,6 +97,7 @@ const Login = () => {
               Forgot your password?
             </Link>
           </div>
+        <button type="button" onClick={(e) => { e.preventDefault(); setEmail('admin@demo.local'); setPassword('Demo!23456'); }}>Log In as Demo</button>
         </form>
 
       </div>

@@ -1,0 +1,11 @@
+'use strict';
+const express = require('express');
+const { authenticateToken } = require('../middleware/auth');
+const { createTaskStore } = require('../wave1b/core');
+const store = createTaskStore();
+const router = express.Router();
+router.get('/', authenticateToken, (req, res) => res.json({ data: store.list(req.user.id, req.query) }));
+router.post('/', authenticateToken, (req, res) => { try { return res.status(201).json({ task: store.create(req.user.id, req.body || {}) }); } catch (e) { return res.status(e.status || 400).json({ error: e.message, code: e.code || 'VALIDATION_ERROR' }); } });
+router.patch('/:id', authenticateToken, (req, res) => { try { const task = store.update(req.user.id, req.params.id, req.body || {}); return task ? res.json({ task }) : res.status(404).json({ error: 'Task not found' }); } catch (e) { return res.status(e.status || 400).json({ error: e.message, code: e.code || 'VALIDATION_ERROR' }); } });
+module.exports = router;
+module.exports.store = store;

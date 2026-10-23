@@ -48,6 +48,25 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
+// Export locations as CSV or JSON (same filters as the list). Declared before /:id.
+router.get('/export', authenticateToken, async (req, res) => {
+  try {
+    const { status, territoryId, search, format = 'json' } = req.query;
+    const where = {};
+    if (status) where.status = status;
+    if (territoryId) where.territoryId = territoryId;
+    if (search) where.OR = [{ name: { contains: search, mode: 'insensitive' } }, { code: { contains: search, mode: 'insensitive' } }, { city: { contains: search, mode: 'insensitive' } }];
+    if (req.user.role === 'LOCATION_MANAGER' && req.user.locationId) where.id = req.user.locationId;
+    const locations = await req.prisma.location.findMany({ where, include: { territory: true }, orderBy: { createdAt: 'desc' }, take: 1000 });
+    if (String(format).toLowerCase() === 'csv') {
+      const { toCsv, LOCATION_COLUMNS } = require('../wave1b/core');
+      res.setHeader('Content-Type', 'text/csv'); res.setHeader('Content-Disposition', 'attachment; filename="locations.csv"');
+      return res.send(toCsv(locations, LOCATION_COLUMNS));
+    }
+    return res.json({ data: locations, total: locations.length });
+  } catch (error) { console.error('Export locations error:', error); return res.status(500).json({ error: 'Failed to export locations' }); }
+});
+
 // Get location by ID
 router.get('/:id', authenticateToken, async (req, res) => {
   try {

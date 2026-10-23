@@ -10,6 +10,7 @@ const { PrismaClient } = require('@prisma/client');
 const { DomainError, errorResponse } = require('./revenue/errors');
 
 const routeMounts = [
+  ['/api/tasks', './routes/tasks'],
   ['/api/auth', './routes/auth'],
   ['/api/users', './routes/users'],
   ['/api/locations', './routes/locations'],
@@ -87,7 +88,7 @@ function createApp({ prisma, corsOrigins = parseOrigins(process.env.CORS_ORIGINS
     legacyHeaders: false,
   });
   app.use('/api', generalLimiter);
-  app.use(['/api/auth/login', '/api/auth/demo-login', '/api/auth/register', '/api/auth/forgot-password'], authLimiter);
+  app.use(['/api/auth/login', '/api/auth/register', '/api/auth/forgot-password'], authLimiter);
 
   app.use(express.json({
     limit: '1mb',
@@ -100,6 +101,7 @@ function createApp({ prisma, corsOrigins = parseOrigins(process.env.CORS_ORIGINS
     next();
   });
 
+  app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
   app.get('/api/health/live', (_req, res) => res.json({ status: 'ok' }));
   app.get('/api/health/ready', async (_req, res, next) => {
     try {

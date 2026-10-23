@@ -1,0 +1,6 @@
+'use strict';
+const test = require('node:test'); const assert = require('node:assert/strict');
+const { createTaskStore, toCsv, LOCATION_COLUMNS, locationPerformanceSummary, issueTriage } = require('../src/wave1b/core');
+test('tasks are owner-scoped with create/list/update', () => { const s = createTaskStore(); const t = s.create('u1', { title: 'Audit signage', notes: 'n' }); assert.equal(s.list('u1').length, 1); assert.equal(s.list('u2').length, 0); assert.equal(s.update('u2', t.id, { status: 'done' }), null); assert.equal(s.update('u1', t.id, { status: 'done' }).status, 'done'); assert.equal(s.list('u1', { search: 'signage' }).length, 1); });
+test('csv preserves 0 and false', () => { const csv = toCsv([{ name: 'A,B', code: 0, city: false }], LOCATION_COLUMNS.slice(0, 3)); assert.match(csv, /"A,B",0,false/); });
+test('deterministic fallbacks are labelled and preserve counts', () => { const a = locationPerformanceSummary([{ name: 'North', status: 'ACTIVE', territoryId: 't1' }, { name: 'South', status: 'CLOSED' }]); assert.equal(a.aiGenerated, false); assert.equal(a.provider, 'deterministic-fallback'); assert.equal(a.sections.metrics.totalLocations, 2); assert.equal(a.sections.metrics.locationsWithoutTerritory, 1); const b = issueTriage([{ title: 'Leak', status: 'OPEN', priority: 'HIGH' }]); assert.equal(b.sections.metrics.openIssues, 1); });
